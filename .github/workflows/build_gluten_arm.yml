@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04-arm  # 直接使用ARM runner，不使用QEMU模拟
+    runs-on: ubuntu-22.04-arm
 
     steps:
     - name: Checkout current repo
@@ -40,24 +40,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-arm-maven-
 
-    - name: Cache Git repositories
-      uses: actions/cache@v4
-      with:
-        path: git-repos-cache
-        key: ${{ runner.os }}-arm-git-repos-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-arm-git-repos-
-
-    - name: Cache build output
-      uses: actions/cache@v4
-      with:
-        path: build-cache
-        key: ${{ runner.os }}-arm-build-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-arm-build-
-
     - name: Cache Docker image
-      id: cache-docker-image
       uses: actions/cache@v4
       with:
         path: docker-image-cache
@@ -78,7 +61,6 @@ jobs:
             echo "拉取SWR公开镜像：$IMAGE"
             if docker pull "$IMAGE"; then
                 echo "SWR镜像拉取成功"
-                # 保存镜像到缓存
                 mkdir -p docker-image-cache
                 echo "保存镜像到缓存..."
                 docker save -o "$CACHE_FILE" "$IMAGE"
@@ -94,8 +76,6 @@ jobs:
         echo "创建本地目录..."
         mkdir -p build-output
         mkdir -p maven-docker-cache
-        mkdir -p git-repos-cache
-        mkdir -p build-cache
 
     - name: Start build container
       run: |
@@ -105,13 +85,10 @@ jobs:
             --user root \
             --entrypoint /bin/sh \
             -v "${{ github.workspace }}/maven-docker-cache:/root/.m2" \
-            -v "${{ github.workspace }}/git-repos-cache:/opt/cache/repos" \
-            -v "${{ github.workspace }}/build-cache:/opt/cache/build" \
             --workdir "/opt" \
             swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003 \
             -c "tail -f /dev/null"
 
-        # 验证容器是否启动成功
         if docker ps --filter "name=^/gluten-project-builder$" --format "{{.Names}}" | grep -q "^gluten-project-builder$"; then
             echo "构建容器 gluten-project-builder 启动成功"
         else
@@ -121,73 +98,44 @@ jobs:
 
     - name: Pull code to container
       run: |
-        echo "拉取代码到容器（使用缓存加速）..."
+        echo "拉取代码到容器..."
         docker exec -t -u root gluten-project-builder bash -c "\
             set -euo pipefail; \
             \
             # Gluten 仓库
-            if [[ -d /opt/cache/repos/gluten/.git ]]; then \
-                echo '更新 Gluten 仓库...'; \
-                cd /opt/cache/repos/gluten && git fetch --all && git reset --hard origin/master; \
-            else \
-                echo '克隆 Gluten 仓库...'; \
-                rm -rf /opt/cache/repos/gluten; \
-                git clone https://gitcode.com/openeuler/Gluten.git /opt/cache/repos/gluten; \
-            fi; \
-            rm -rf /opt/gluten && ln -s /opt/cache/repos/gluten /opt/gluten; \
+            echo '克隆 Gluten 仓库...'; \
+            rm -rf /opt/gluten; \
+            git clone https://gitcode.com/openeuler/Gluten.git /opt/gluten; \
             \
             # OmniOperator 仓库
-            if [[ -d /opt/cache/repos/OmniOperatorJIT/.git ]]; then \
-                echo '更新 OmniOperator 仓库...'; \
-                cd /opt/cache/repos/OmniOperatorJIT && git fetch --all && git reset --hard origin/master; \
-            else \
-                echo '克隆 OmniOperator 仓库...'; \
-                rm -rf /opt/cache/repos/OmniOperatorJIT; \
-                git clone https://gitcode.com/openeuler/OmniOperator.git /opt/cache/repos/OmniOperatorJIT; \
-            fi; \
-            rm -rf /opt/OmniOperatorJIT && ln -s /opt/cache/repos/OmniOperatorJIT /opt/OmniOperatorJIT; \
+            echo '克隆 OmniOperator 仓库...'; \
+            rm -rf /opt/OmniOperatorJIT; \
+            git clone https://gitcode.com/openeuler/OmniOperator.git /opt/OmniOperatorJIT; \
             \
             # libboundscheck 仓库
-            if [[ -d /opt/cache/repos/libboundscheck/.git ]]; then \
-                echo '更新 libboundscheck 仓库...'; \
-                cd /opt/cache/repos/libboundscheck && git fetch --all && git checkout tags/v1.1.16; \
-            else \
-                echo '克隆 libboundscheck 仓库...'; \
-                rm -rf /opt/cache/repos/libboundscheck; \
-                git clone https://gitcode.com/openeuler/libboundscheck.git /opt/cache/repos/libboundscheck; \
-                cd /opt/cache/repos/libboundscheck && git checkout tags/v1.1.16; \
-            fi; \
-            rm -rf /opt/libboundscheck && ln -s /opt/cache/repos/libboundscheck /opt/libboundscheck; \
+            echo '克隆 libboundscheck 仓库...'; \
+            rm -rf /opt/libboundscheck; \
+            git clone https://gitcode.com/openeuler/libboundscheck.git /opt/libboundscheck; \
+            cd /opt/libboundscheck && git checkout tags/v1.1.16; \
             \
             # BoostKit_CI 仓库
-            if [[ -d /opt/cache/repos/BoostKit_CI/.git ]]; then \
-                echo '更新 BoostKit_CI 仓库...'; \
-                cd /opt/cache/repos/BoostKit_CI && git pull; \
-            else \
-                echo '克隆 BoostKit_CI 仓库...'; \
-                rm -rf /opt/cache/repos/BoostKit_CI; \
-                git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/Kunpeng_BoostKit00001/BoostKit_CI.git /opt/cache/repos/BoostKit_CI; \
-            fi; \
-            rm -rf /opt/BoostKit_CI && ln -s /opt/cache/repos/BoostKit_CI /opt/BoostKit_CI; \
+            echo '克隆 BoostKit_CI 仓库...'; \
+            rm -rf /opt/BoostKit_CI; \
+            git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/Kunpeng_BoostKit00001/BoostKit_CI.git /opt/BoostKit_CI; \
         "
-        echo "代码拉取完成，存放路径：/opt/cache/repos/"
+        echo "代码拉取完成，存放路径：/opt/"
 
     - name: Execute build script
       run: |
-        full_build_script_path='/opt/BoostKit_CI/script/bigdata/Gluten_compile.sh'
         gluten_branch="${{ inputs.gluten_branch || 'master' }}"
-        echo "执行构建脚本：$full_build_script_path"
-        echo "Gluten 分支：$gluten_branch"
-        docker exec -t -e WORKSPACE=/opt -e gluten_branch="$gluten_branch" gluten-project-builder bash -c "\
-            set -euo pipefail; \
-            if [[ ! -f $full_build_script_path ]]; then
-                echo '构建脚本不存在！路径：$full_build_script_path';
-                exit 1;
-            fi;
-            chmod +x $full_build_script_path;
-            dos2unix $full_build_script_path;
-            $full_build_script_path package;
-        "
+        echo "执行构建脚本，Gluten 分支：$gluten_branch"
+        docker exec -t \
+            -e WORKSPACE=/opt \
+            -e gluten_branch="$gluten_branch" \
+            gluten-project-builder \
+            bash -c "chmod +x /opt/BoostKit_CI/script/bigdata/Gluten_compile.sh && \
+                     dos2unix /opt/BoostKit_CI/script/bigdata/Gluten_compile.sh && \
+                     /opt/BoostKit_CI/script/bigdata/Gluten_compile.sh package"
         echo "构建脚本执行完成！"
 
     - name: Copy artifact from container
