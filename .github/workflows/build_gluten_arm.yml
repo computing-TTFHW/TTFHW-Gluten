@@ -145,6 +145,7 @@ jobs:
                 rm -rf /opt/cache/repos/OmniOperatorJIT; \
                 git clone https://gitcode.com/openeuler/OmniOperator.git /opt/cache/repos/OmniOperatorJIT; \
             fi; \
+            rm -rf /opt/OmniOperatorJIT && ln -s /opt/cache/repos/OmniOperatorJIT /opt/OmniOperatorJIT; \
             \
             # libboundscheck 仓库
             if [[ -d /opt/cache/repos/libboundscheck/.git ]]; then \
@@ -156,6 +157,7 @@ jobs:
                 git clone https://gitcode.com/openeuler/libboundscheck.git /opt/cache/repos/libboundscheck; \
                 cd /opt/cache/repos/libboundscheck && git checkout tags/v1.1.16; \
             fi; \
+            rm -rf /opt/libboundscheck && ln -s /opt/cache/repos/libboundscheck /opt/libboundscheck; \
             \
             # BoostKit_CI 仓库
             if [[ -d /opt/cache/repos/BoostKit_CI/.git ]]; then \
