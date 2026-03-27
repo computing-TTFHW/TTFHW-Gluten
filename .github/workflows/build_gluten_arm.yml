@@ -56,14 +56,37 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-arm-build-
 
-    - name: Pull SWR public image
+    - name: Cache Docker image
+      id: cache-docker-image
+      uses: actions/cache@v4
+      with:
+        path: docker-image-cache
+        key: ${{ runner.os }}-arm-docker-openeuler22.03-arm64_003
+        restore-keys: |
+          ${{ runner.os }}-arm-docker-
+
+    - name: Load or pull Docker image
       run: |
-        echo "拉取SWR公开镜像：swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003"
-        if docker pull swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003; then
-            echo "SWR镜像拉取成功"
+        IMAGE="swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003"
+        CACHE_FILE="${{ github.workspace }}/docker-image-cache/openeuler.tar"
+
+        if [[ -f "$CACHE_FILE" ]]; then
+            echo "从缓存加载Docker镜像..."
+            docker load -i "$CACHE_FILE"
+            echo "Docker镜像加载成功"
         else
-            echo "SWR镜像拉取失败！请检查：1.镜像地址是否正确 2.网络是否能访问华为云SWR"
-            exit 1
+            echo "拉取SWR公开镜像：$IMAGE"
+            if docker pull "$IMAGE"; then
+                echo "SWR镜像拉取成功"
+                # 保存镜像到缓存
+                mkdir -p docker-image-cache
+                echo "保存镜像到缓存..."
+                docker save -o "$CACHE_FILE" "$IMAGE"
+                echo "镜像已缓存到: $CACHE_FILE"
+            else
+                echo "SWR镜像拉取失败！请检查：1.镜像地址是否正确 2.网络是否能访问华为云SWR"
+                exit 1
+            fi
         fi
 
     - name: Create local directories
