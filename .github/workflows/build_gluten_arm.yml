@@ -36,9 +36,25 @@ jobs:
       uses: actions/cache@v4
       with:
         path: maven-docker-cache
-        key: ${{ runner.os }}-arm-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-arm-maven-${{ github.run_id }}
         restore-keys: |
           ${{ runner.os }}-arm-maven-
+
+    - name: Cache Git repositories
+      uses: actions/cache@v4
+      with:
+        path: git-repos-cache
+        key: ${{ runner.os }}-arm-git-repos-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-arm-git-repos-
+
+    - name: Cache build output
+      uses: actions/cache@v4
+      with:
+        path: build-cache
+        key: ${{ runner.os }}-arm-build-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-arm-build-
 
     - name: Pull SWR public image
       run: |
@@ -55,6 +71,8 @@ jobs:
         echo "创建本地目录..."
         mkdir -p build-output
         mkdir -p maven-docker-cache
+        mkdir -p git-repos-cache
+        mkdir -p build-cache
 
     - name: Start build container
       run: |
@@ -64,6 +82,8 @@ jobs:
             --user root \
             --entrypoint /bin/sh \
             -v "${{ github.workspace }}/maven-docker-cache:/root/.m2" \
+            -v "${{ github.workspace }}/git-repos-cache:/opt/cache/repos" \
+            -v "${{ github.workspace }}/build-cache:/opt/cache/build" \
             --workdir "/opt" \
             swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003 \
             -c "tail -f /dev/null"
@@ -78,19 +98,54 @@ jobs:
 
     - name: Pull code to container
       run: |
-        echo "拉取代码到容器..."
+        echo "拉取代码到容器（使用缓存加速）..."
         docker exec -t -u root gluten-project-builder bash -c "\
             set -euo pipefail; \
-            rm -rf /opt/gluten; \
-            git clone -b master https://gitcode.com/openeuler/Gluten.git /opt/gluten; \
-            rm -rf /opt/OmniOperatorJIT; \
-            git clone -b master https://gitcode.com/openeuler/OmniOperator.git /opt/OmniOperatorJIT; \
-            rm -rf /opt/libboundscheck; \
-            git clone https://gitcode.com/openeuler/libboundscheck.git && pushd /opt/libboundscheck && git checkout tags/v1.1.16 && popd; \
-            rm -rf /opt/BoostKit_CI; \
-            git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/Kunpeng_BoostKit00001/BoostKit_CI.git /opt/BoostKit_CI; \
+            \
+            # Gluten 仓库
+            if [[ -d /opt/cache/repos/gluten/.git ]]; then \
+                echo '更新 Gluten 仓库...'; \
+                cd /opt/cache/repos/gluten && git fetch --all && git reset --hard origin/master; \
+            else \
+                echo '克隆 Gluten 仓库...'; \
+                rm -rf /opt/cache/repos/gluten; \
+                git clone https://gitcode.com/openeuler/Gluten.git /opt/cache/repos/gluten; \
+            fi; \
+            rm -rf /opt/gluten && ln -s /opt/cache/repos/gluten /opt/gluten; \
+            \
+            # OmniOperator 仓库
+            if [[ -d /opt/cache/repos/OmniOperatorJIT/.git ]]; then \
+                echo '更新 OmniOperator 仓库...'; \
+                cd /opt/cache/repos/OmniOperatorJIT && git fetch --all && git reset --hard origin/master; \
+            else \
+                echo '克隆 OmniOperator 仓库...'; \
+                rm -rf /opt/cache/repos/OmniOperatorJIT; \
+                git clone https://gitcode.com/openeuler/OmniOperator.git /opt/cache/repos/OmniOperatorJIT; \
+            fi; \
+            \
+            # libboundscheck 仓库
+            if [[ -d /opt/cache/repos/libboundscheck/.git ]]; then \
+                echo '更新 libboundscheck 仓库...'; \
+                cd /opt/cache/repos/libboundscheck && git fetch --all && git checkout tags/v1.1.16; \
+            else \
+                echo '克隆 libboundscheck 仓库...'; \
+                rm -rf /opt/cache/repos/libboundscheck; \
+                git clone https://gitcode.com/openeuler/libboundscheck.git /opt/cache/repos/libboundscheck; \
+                cd /opt/cache/repos/libboundscheck && git checkout tags/v1.1.16; \
+            fi; \
+            \
+            # BoostKit_CI 仓库
+            if [[ -d /opt/cache/repos/BoostKit_CI/.git ]]; then \
+                echo '更新 BoostKit_CI 仓库...'; \
+                cd /opt/cache/repos/BoostKit_CI && git pull; \
+            else \
+                echo '克隆 BoostKit_CI 仓库...'; \
+                rm -rf /opt/cache/repos/BoostKit_CI; \
+                git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/Kunpeng_BoostKit00001/BoostKit_CI.git /opt/cache/repos/BoostKit_CI; \
+            fi; \
+            rm -rf /opt/BoostKit_CI && ln -s /opt/cache/repos/BoostKit_CI /opt/BoostKit_CI; \
         "
-        echo "代码拉取完成，存放路径：/opt/"
+        echo "代码拉取完成，存放路径：/opt/cache/repos/"
 
     - name: Execute build script
       run: |
