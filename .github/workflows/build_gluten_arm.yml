@@ -98,14 +98,15 @@ jobs:
 
     - name: Pull code to container
       run: |
-        echo "拉取代码到容器..."
-        docker exec -t -u root gluten-project-builder bash -c "\
+        gluten_branch="${{ inputs.gluten_branch || 'master' }}"
+        echo "拉取代码到容器，Gluten 分支：$gluten_branch"
+        docker exec -t -e gluten_branch="$gluten_branch" -u root gluten-project-builder bash -c "\
             set -euo pipefail; \
             \
             # Gluten 仓库
-            echo '克隆 Gluten 仓库...'; \
+            echo '克隆 Gluten 仓库，分支：' \$gluten_branch; \
             rm -rf /opt/gluten; \
-            git clone https://gitcode.com/openeuler/Gluten.git /opt/gluten; \
+            git clone -b \$gluten_branch https://gitcode.com/openeuler/Gluten.git /opt/gluten; \
             \
             # OmniOperator 仓库
             echo '克隆 OmniOperator 仓库...'; \
