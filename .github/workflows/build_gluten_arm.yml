@@ -3,7 +3,13 @@ name: Build Gluten for Kunpeng (ARM)
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      gluten_branch:
+        description: 'Gluten 代码分支'
+        required: false
+        default: 'master'
+        type: string
 
 jobs:
   build:
@@ -89,8 +95,10 @@ jobs:
     - name: Execute build script
       run: |
         full_build_script_path='/opt/BoostKit_CI/script/bigdata/Gluten_compile.sh'
+        GLUTEN_BRANCH="${{ inputs.gluten_branch || 'master' }}"
         echo "执行构建脚本：$full_build_script_path"
-        docker exec -t -e WORKSPACE=/opt gluten-project-builder bash -c "\
+        echo "Gluten 分支：$GLUTEN_BRANCH"
+        docker exec -t -e WORKSPACE=/opt -e GLUTEN_BRANCH="$GLUTEN_BRANCH" gluten-project-builder bash -c "\
             set -euo pipefail; \
             if [[ ! -f $full_build_script_path ]]; then
                 echo '构建脚本不存在！路径：$full_build_script_path';
