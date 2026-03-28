@@ -118,13 +118,15 @@ jobs:
             rm -rf /opt/libboundscheck; \
             git clone https://gitcode.com/openeuler/libboundscheck.git /opt/libboundscheck; \
             cd /opt/libboundscheck && git checkout tags/v1.1.16; \
-            \
-            # BoostKit_CI 仓库
-            echo '克隆 BoostKit_CI 仓库...'; \
-            rm -rf /opt/BoostKit_CI; \
-            git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/Kunpeng_BoostKit00001/BoostKit_CI.git /opt/BoostKit_CI; \
         "
         echo "代码拉取完成，存放路径：/opt/"
+
+    - name: Copy build scripts to container
+      run: |
+        echo "复制构建脚本到容器..."
+        docker exec -t -u root gluten-project-builder mkdir -p /opt/.ci/build
+        docker cp "${{ github.workspace }}/.ci/build/." gluten-project-builder:/opt/.ci/build/
+        echo "构建脚本复制完成！"
 
     - name: Execute build script
       run: |
@@ -134,9 +136,9 @@ jobs:
             -e WORKSPACE=/opt \
             -e gluten_branch="$gluten_branch" \
             gluten-project-builder \
-            bash -c "chmod +x /opt/BoostKit_CI/script/bigdata/Gluten_compile.sh && \
-                     dos2unix /opt/BoostKit_CI/script/bigdata/Gluten_compile.sh && \
-                     /opt/BoostKit_CI/script/bigdata/Gluten_compile.sh package"
+            bash -c "chmod +x /opt/.ci/build/Gluten_compile.sh && \
+                     dos2unix /opt/.ci/build/Gluten_compile.sh && \
+                     /opt/.ci/build/Gluten_compile.sh package"
         echo "构建脚本执行完成！"
 
     - name: Copy artifact from container

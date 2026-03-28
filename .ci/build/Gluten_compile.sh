@@ -110,7 +110,7 @@ function BoostKit_gluten_Version_info(){
 
 function dopackage(){
     pushd ${WORKSPACE}/
-    cp BoostKit_CI/SpecifiedFunction/Retrieve_source_code.py ./
+    cp .ci/build/Retrieve_source_code.py ./
     python3 Retrieve_source_code.py
     cp repositories_info.json ${agentpath}/inner
     mkdir -p ${WORKSPACE}/tmppackage
@@ -131,8 +131,8 @@ function dopackage(){
     pushd ${agentpath}/inner/ && zip -r Dependency_library_Gluten.zip Dependency_library_Gluten && cp Dependency_library_Gluten.zip ${agentpath}/software && popd
     pushd ${agentpath}/software
     #########生成json文件#########################
-    python3 ${WORKSPACE}/BoostKit_CI/SpecifiedFunction/collect_software_info.py ${WORKSPACE}/BoostKit_CI/sourcecode/bigdata/code.xml ${WORKSPACE} BoostKit-omniruntime-gluten-2.0.0.zip
-    python3 ${WORKSPACE}/BoostKit_CI/SpecifiedFunction/collect_software_info.py ${WORKSPACE}/BoostKit_CI/sourcecode/bigdata/code.xml ${WORKSPACE} Dependency_library_Gluten.zip
+    python3 ${WORKSPACE}/.ci/build/collect_software_info.py ${WORKSPACE}/.ci/build/code.xml ${WORKSPACE} BoostKit-omniruntime-gluten-2.0.0.zip
+    python3 ${WORKSPACE}/.ci/build/collect_software_info.py ${WORKSPACE}/.ci/build/code.xml ${WORKSPACE} Dependency_library_Gluten.zip
     ###############end############################
     popd
 }
