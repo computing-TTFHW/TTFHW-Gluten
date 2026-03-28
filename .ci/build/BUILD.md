@@ -120,21 +120,34 @@ source build_config.env
 
 **作用：** 查找工作空间中的 Git 仓库，收集分支/tag、commit ID 等信息。
 
-**输入：** 无（自动读取 `code.xml`）
+**命令用法：**
+```bash
+python3 Retrieve_source_code.py [xml_file] [workspace] [output_file]
+```
 
-**输出：** `repositories_info.json`
+**参数：**
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `xml_file` | code.xml 配置文件路径 | `.ci/build/code.xml` |
+| `workspace` | 工作空间目录 | 当前目录 |
+| `output_file` | 输出 JSON 文件路径 | `repositories_info.json` |
 
 **输出格式：**
 ```json
 [
     {
-        "url": "https://gitcode.com/openeuler/Gluten.git",
-        "目录名称": "gluten",
-        "代码分支或tag": "master",
-        "commitid": "abc123def456..."
+        "repoUrl": "https://gitcode.com/openeuler/Gluten.git",
+        "repoBranch": "master",
+        "commitId": "abc123def456...",
+        "dirName": "gluten"
     }
 ]
 ```
+
+**特性：**
+- 支持命令行参数，灵活指定输入输出
+- 限制搜索深度（默认 4 级），提高效率
+- 统一字段命名，与 `collect_software_info.py` 保持一致
 
 ---
 

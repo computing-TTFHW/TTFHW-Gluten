@@ -247,8 +247,7 @@ package_artifacts() {
     pushd ${WORKSPACE}
 
     # 生成仓库信息
-    cp .ci/build/Retrieve_source_code.py ./
-    python3 Retrieve_source_code.py
+    python3 .ci/build/Retrieve_source_code.py .ci/build/code.xml ${WORKSPACE} repositories_info.json
     cp repositories_info.json ${agentpath}/inner
 
     # 收集产物文件
