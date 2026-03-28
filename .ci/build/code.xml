@@ -1,9 +1,6 @@
 <repositories>
+    <!-- 实际克隆和使用的仓库 -->
     <repo url="https://gitcode.com/openeuler/Gluten.git" dir="gluten"/>
     <repo url="https://gitcode.com/openeuler/OmniOperator.git" dir="OmniOperatorJIT"/>
-    <repo url="https://gitcode.com/openeuler/OmniStream.git" dir="OmniStream"/>
-    <repo url="https://gitcode.com/openeuler/OmniStateStore.git" dir="OmniStateStore"/>
-    <repo url="https://gitcode.com/openeuler/OmniAdaptor.git" dir="OmniAdaptor"/>    
-    <repo url="https://gitcode.com/boostkit/boostkit-bigdata.git" dir="boostkit-bigdata"/>  
-    <repo url="https://gitee.com/kunpeng_compute/kacc_json.git" dir="kacc_json"/>
+    <repo url="https://gitcode.com/openeuler/libboundscheck.git" dir="libboundscheck"/>
 </repositories>

@@ -291,12 +291,12 @@ package_artifacts() {
     # 生成元数据 JSON
     pushd ${agentpath}/software
     python3 ${WORKSPACE}/.ci/build/collect_software_info.py \
-        ${WORKSPACE}/.ci/build/code.xml \
-        ${WORKSPACE} \
+        --xml ${WORKSPACE}/.ci/build/code.xml \
+        --workspace ${WORKSPACE} \
         BoostKit-omniruntime-gluten-${COMPONENT_VERSION}.zip
     python3 ${WORKSPACE}/.ci/build/collect_software_info.py \
-        ${WORKSPACE}/.ci/build/code.xml \
-        ${WORKSPACE} \
+        --xml ${WORKSPACE}/.ci/build/code.xml \
+        --workspace ${WORKSPACE} \
         Dependency_library_Gluten.zip
     popd
 

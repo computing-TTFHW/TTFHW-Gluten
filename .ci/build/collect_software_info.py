@@ -1,221 +1,265 @@
 #!/usr/bin/env python3
+"""
+软件包元数据生成脚本
+
+功能：
+1. 计算软件包的 SHA256 摘要
+2. 收集工作空间中 Git 仓库的信息（复用 Retrieve_source_code.py）
+3. 生成包含 SHA256、仓库信息、构建时间的 JSON 元数据文件
+
+用法：
+    python3 collect_software_info.py [options] <package_file>
+
+参数：
+    package_file     软件包文件路径（必需）
+
+选项：
+    --xml FILE       code.xml 配置文件路径（默认：.ci/build/code.xml）
+    --workspace DIR  工作空间目录（默认：当前目录）
+    --output FILE    输出 JSON 文件路径（默认：<package_file>.json）
+
+示例：
+    # 基本用法
+    python3 collect_software_info.py BoostKit-omniruntime-gluten-2.0.0.zip
+
+    # 指定参数
+    python3 collect_software_info.py --xml code.xml --workspace /opt package.zip
+"""
+
 import os
 import sys
 import json
 import hashlib
-import re
-import xml.etree.ElementTree as ET
+import argparse
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Tuple, Set
+from datetime import datetime
+from typing import Dict, List, Optional
 
-def calculate_sha256(file_path: str) -> str:
-    """计算文件的SHA256摘要"""
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            # 分块读取大文件，避免内存溢出
-            for chunk in iter(lambda: f.read(4096), b""):
+
+class SoftwareMetadataGenerator:
+    """软件包元数据生成器"""
+
+    # 分块读取大小
+    CHUNK_SIZE = 8192
+
+    def __init__(self, package_path: str, xml_path: str, workspace: str, output_path: Optional[str] = None):
+        """
+        初始化生成器
+
+        Args:
+            package_path: 软件包文件路径
+            xml_path: code.xml 配置文件路径
+            workspace: 工作空间目录
+            output_path: 输出 JSON 文件路径（可选）
+        """
+        self.package_path = Path(package_path).resolve()
+        self.xml_path = Path(xml_path).resolve()
+        self.workspace = Path(workspace).resolve()
+        self.output_path = Path(output_path).resolve() if output_path else None
+
+    def calculate_sha256(self) -> str:
+        """
+        计算软件包的 SHA256 摘要
+
+        Returns:
+            SHA256 十六进制字符串
+        """
+        if not self.package_path.exists():
+            raise FileNotFoundError(f"软件包文件不存在: {self.package_path}")
+
+        sha256_hash = hashlib.sha256()
+
+        with open(self.package_path, "rb") as f:
+            for chunk in iter(lambda: f.read(self.CHUNK_SIZE), b""):
                 sha256_hash.update(chunk)
+
         return sha256_hash.hexdigest()
-    except FileNotFoundError:
-        print(f"错误：未找到软件包文件 {file_path}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"计算SHA256失败：{str(e)}", file=sys.stderr)
-        sys.exit(1)
 
-def parse_code_xml(xml_path: str) -> Dict[str, str]:
-    """解析code.xml，返回dir到url的映射"""
-    dir_url_map = {}
-    try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        for repo in root.findall("repo"):
-            dir_name = repo.get("dir")
-            url = repo.get("url")
-            if dir_name and url:
-                dir_url_map[dir_name] = url
-            else:
-                print(f"警告：code.xml中发现无效的repo节点（dir或url为空）", file=sys.stderr)
-    except FileNotFoundError:
-        print(f"错误：未找到code.xml文件 {xml_path}", file=sys.stderr)
-        sys.exit(1)
-    except ET.ParseError:
-        print(f"错误：code.xml文件格式无效 {xml_path}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"解析code.xml失败：{str(e)}", file=sys.stderr)
-        sys.exit(1)
-    return dir_url_map
+    def collect_repo_info(self) -> List[Dict[str, str]]:
+        """
+        收集工作空间中 Git 仓库的信息
 
-def clean_git_url(url: str) -> str:
-    """清理Git URL中的认证信息（账号、密码、token）"""
-    if not url:
-        return url
-    
-    # 匹配并移除 HTTPS URL 中的认证信息 (user:pass@ 或 user:token@)
-    cleaned_url = re.sub(r'https://[^:]+:[^@]+@', 'https://', url)
-    return cleaned_url
+        复用 Retrieve_source_code.py 脚本
 
-def get_checked_out_tag(repo_dir: str) -> str:
-    """
-    从git reflog中解析用户实际检出的Tag（兼容git checkout tags/XX）
-    """
-    try:
-        reflog_cmd = f"git -C {repo_dir} reflog --no-abbrev -10"
-        reflog_output = os.popen(reflog_cmd).read().strip()
-        if not reflog_output:
-            return ""
-        
-        tag_pattern = re.compile(
-            r'checkout:\s+moving\s+(?:from|to)\s+.+\s+(tags/(\S+))|checkout:\s+moving\s+to\s+(\S+)$',
-            re.MULTILINE
-        )
-        matches = tag_pattern.findall(reflog_output)
-        
-        for match in matches:
-            if match[1]:
-                tag_name = match[1].strip()
-                verify_cmd = f"git -C {repo_dir} show-ref --tags {tag_name}"
-                if os.popen(verify_cmd).read().strip():
-                    return tag_name
-            elif match[2]:
-                candidate_tag = match[2].strip()
-                verify_cmd = f"git -C {repo_dir} show-ref --tags {candidate_tag}"
-                if os.popen(verify_cmd).read().strip():
-                    return candidate_tag
-        return ""
-    except Exception as e:
-        print(f"解析检出Tag失败：{str(e)}", file=sys.stderr)
-        return ""
+        Returns:
+            仓库信息列表
+        """
+        # 动态导入 Retrieve_source_code 模块
+        script_dir = Path(__file__).parent
+        retrieve_script = script_dir / "Retrieve_source_code.py"
 
-def get_all_tags_for_commit(repo_dir: str, commit_id: str) -> Set[str]:
-    """获取关联到指定Commit ID的所有Tag"""
-    try:
-        tag_cmd = f"git -C {repo_dir} tag --points-at {commit_id}"
-        tags = os.popen(tag_cmd).read().strip().splitlines()
-        return set([t.strip() for t in tags if t.strip()])
-    except Exception as e:
-        print(f"获取Commit {commit_id} 关联的Tag失败：{str(e)}", file=sys.stderr)
-        return set()
+        if not retrieve_script.exists():
+            print(f"警告：找不到 Retrieve_source_code.py，跳过仓库信息收集", file=sys.stderr)
+            return []
 
-def get_git_info(repo_dir: str) -> Tuple[str, str, str]:
-    """
-    获取git仓库信息：URL + 实际检出的Tag/所有关联Tag/分支 + Commit ID
-    """
-    repo_path = Path(repo_dir)
-    if not (repo_path / ".git").exists():
-        return "", "", ""
-    
-    try:
-        # 1. 获取远程仓库URL
-        url_cmd = f"git -C {repo_dir} remote get-url origin"
-        repo_url = os.popen(url_cmd).read().strip()
-        
-        # 清理URL中的认证信息
-        repo_url = clean_git_url(repo_url)
-        
-        # 2. 获取当前Commit ID
-        commit_cmd = f"git -C {repo_dir} rev-parse HEAD"
-        commit_id = os.popen(commit_cmd).read().strip()
-        if not commit_id:
-            return repo_url, "master", ""
-        
-        # 3. 优先获取用户实际检出的Tag
-        checked_out_tag = get_checked_out_tag(repo_dir)
-        if checked_out_tag:
-            return repo_url, checked_out_tag, commit_id
-        
-        # 4. 若未找到检出记录，返回该Commit关联的所有Tag
-        all_tags = get_all_tags_for_commit(repo_dir, commit_id)
-        if all_tags:
-            return repo_url, ",".join(sorted(all_tags)), commit_id
-        
-        # 5. 最后获取分支
-        branch_cmd = f"git -C {repo_dir} rev-parse --abbrev-ref HEAD"
-        repo_branch = os.popen(branch_cmd).read().strip() or "master"
-        
-        return repo_url, repo_branch, commit_id
-    except Exception as e:
-        print(f"获取仓库 {repo_dir} 的Git信息失败：{str(e)}", file=sys.stderr)
-        return "", "", ""
+        try:
+            # 使用 subprocess 调用 Retrieve_source_code.py
+            import tempfile
 
-def search_repo_info(workspace: str, dir_url_map: Dict[str, str]) -> List[Dict[str, str]]:
-    """在WORKSPACE及其下四级目录搜索仓库信息"""
-    repo_info_list = []
-    seen = set()  # 去重：url + ref(Tag/分支) + commit_id
-    
-    search_levels = [0, 1, 2, 3, 4]
-    workspace_path = Path(workspace).resolve()
-    
-    if not workspace_path.exists():
-        print(f"错误：WORKSPACE目录不存在 {workspace}", file=sys.stderr)
-        return []
-    
-    for dir_name, target_url in dir_url_map.items():
-        for level in search_levels:
-            relative_pattern = ("*/" * level) + dir_name
-            for repo_dir in workspace_path.glob(relative_pattern):
-                if repo_dir.is_dir():
-                    repo_url, repo_ref, commit_id = get_git_info(str(repo_dir))
-                    if not (repo_url and commit_id):
-                        continue
-                    unique_key = (repo_url, repo_ref, commit_id)
-                    if unique_key not in seen:
-                        seen.add(unique_key)
-                        repo_info_list.append({
-                            "repoUrl": repo_url,
-                            "repoBranch": repo_ref,
-                            "commitId": commit_id
-                        })
-    
-    return repo_info_list
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+                tmp_output = tmp.name
 
-def main():
-    # 检查入参数量
-    if len(sys.argv) != 4:
-        print("用法：python3 collect_software_info.py <code.xml路径> <WORKSPACE目录> <软件包名>", file=sys.stderr)
-        print("示例：python3 collect_software_info.py ./sourcecode/bigdata/code.xml /workspace mypackage.tar.gz", file=sys.stderr)
-        sys.exit(1)
-    
-    # 获取入参
-    xml_path = sys.argv[1]
-    workspace = sys.argv[2]
-    package_name = sys.argv[3]
-    package_path = Path(package_name)
-    
-    # 1. 计算软件包SHA256
-    sha256sum = calculate_sha256(str(package_path))
-    
-    # 2. 解析code.xml
-    dir_url_map = parse_code_xml(xml_path)
-    if not dir_url_map:
-        print("警告：code.xml中未解析到有效的仓库信息", file=sys.stderr)
-    
-    # 3. 搜索仓库信息
-    repo_info = search_repo_info(workspace, dir_url_map)
-    
-    # 4. 获取构建时间（关键修改：格式化为纯数字）
-    from datetime import datetime
-    # 格式说明：%Y(年)%m(月)%d(日)%H(时)%M(分)%S(秒) → 例如 20260304153022
-    build_time = datetime.now().strftime("%Y%m%d%H%M%S")
-    
-    # 5. 构建JSON数据
-    json_data = {
-        "sha256Sum": sha256sum, 
-        "repoInfo": repo_info,
-        "buildTime": build_time
-    }
-    
-    # 6. 写入JSON文件
-    json_filename = f"{package_name}.json"
-    try:
-        with open(json_filename, "w", encoding="utf-8") as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=4)
-        print(f"成功生成JSON文件：{json_filename}")
-    except Exception as e:
-        print(f"写入JSON文件失败：{str(e)}", file=sys.stderr)
-        sys.exit(1)
+            try:
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(retrieve_script),
+                        str(self.xml_path),
+                        str(self.workspace),
+                        tmp_output
+                    ],
+                    capture_output=True,
+                    text=True
+                )
 
-if __name__ == "__main__":
-    main()
+                if result.returncode != 0:
+                    print(f"警告：仓库信息收集失败 - {result.stderr}", file=sys.stderr)
+                    return []
+
+                # 读取结果
+                with open(tmp_output, 'r', encoding='utf-8') as f:
+                    repo_info = json.load(f)
+
+                return repo_info
+
+            finally:
+                # 清理临时文件
+                if os.path.exists(tmp_output):
+                    os.remove(tmp_output)
+
+        except Exception as e:
+            print(f"警告：收集仓库信息时出错 - {e}", file=sys.stderr)
+            return []
+
+    def generate_metadata(self) -> Dict:
+        """
+        生成完整的元数据
+
+        Returns:
+            元数据字典
+        """
+        print(f"计算 SHA256: {self.package_path.name}...")
+        sha256_sum = self.calculate_sha256()
+        print(f"SHA256: {sha256_sum}")
+
+        print(f"收集仓库信息...")
+        repo_info = self.collect_repo_info()
+        print(f"找到 {len(repo_info)} 个仓库")
+
+        build_time = datetime.now().strftime("%Y%m%d%H%M%S")
+
+        return {
+            "sha256Sum": sha256_sum,
+            "repoInfo": repo_info,
+            "buildTime": build_time
+        }
+
+    def save_metadata(self, metadata: Dict) -> Path:
+        """
+        保存元数据到 JSON 文件
+
+        Args:
+            metadata: 元数据字典
+
+        Returns:
+            输出文件路径
+        """
+        if self.output_path:
+            output_file = self.output_path
+        else:
+            output_file = Path(f"{self.package_path}.json")
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=4)
+
+        return output_file
+
+    def run(self) -> int:
+        """
+        执行元数据生成流程
+
+        Returns:
+            退出码（0 表示成功）
+        """
+        try:
+            # 生成元数据
+            metadata = self.generate_metadata()
+
+            # 保存结果
+            output_file = self.save_metadata(metadata)
+
+            print(f"\n元数据已生成: {output_file}")
+            print(f"  - SHA256: {metadata['sha256Sum'][:16]}...")
+            print(f"  - 仓库数: {len(metadata['repoInfo'])}")
+            print(f"  - 构建时间: {metadata['buildTime']}")
+
+            return 0
+
+        except FileNotFoundError as e:
+            print(f"错误：{e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"错误：生成元数据失败 - {e}", file=sys.stderr)
+            return 1
+
+
+def parse_args() -> argparse.Namespace:
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(
+        description='生成软件包的元数据（SHA256、仓库信息、构建时间）',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+    # 基本用法
+    python3 collect_software_info.py package.zip
+
+    # 指定配置文件和工作空间
+    python3 collect_software_info.py --xml code.xml --workspace /opt package.zip
+
+    # 指定输出文件
+    python3 collect_software_info.py --output metadata.json package.zip
+        """
+    )
+
+    parser.add_argument(
+        'package_file',
+        help='软件包文件路径'
+    )
+
+    parser.add_argument(
+        '--xml',
+        default='.ci/build/code.xml',
+        help='code.xml 配置文件路径（默认：.ci/build/code.xml）'
+    )
+
+    parser.add_argument(
+        '--workspace',
+        default='.',
+        help='工作空间目录（默认：当前目录）'
+    )
+
+    parser.add_argument(
+        '--output', '-o',
+        help='输出 JSON 文件路径（默认：<package_file>.json）'
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    """主入口"""
+    args = parse_args()
+
+    generator = SoftwareMetadataGenerator(
+        package_path=args.package_file,
+        xml_path=args.xml,
+        workspace=args.workspace,
+        output_path=args.output
+    )
+
+    return generator.run()
+
+
+if __name__ == '__main__':
+    sys.exit(main())
