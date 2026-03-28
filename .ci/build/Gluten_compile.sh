@@ -2,13 +2,37 @@ set -ex
 
 export OMNI_HOME=$(pwd)
 mkdir -p $OMNI_HOME/lib/include
-# mv ${WORKSPACE}/BoostKit_CI/maven/Gluten_settings.xml /opt/buildtools/apache-maven/apache-maven-3.9.9/conf/settings.xml
 agentpath="${WORKSPACE}/toCMC"
 if [ -d "${agentpath}" ];then rm -rf ${agentpath}; fi
 mkdir -p ${agentpath}/software
-mkdir -p ${agentpath}/inner 
+mkdir -p ${agentpath}/inner
 OmniOperatorJIT_Version=2.1.0
 OS_type=openeuler-sve
+
+# 默认分支设置
+: "${gluten_branch:=master}"
+
+function clone_repos(){
+    echo "=== 开始克隆代码仓库 ==="
+
+    # Gluten 仓库
+    echo "克隆 Gluten 仓库，分支：${gluten_branch}"
+    rm -rf ${WORKSPACE}/gluten
+    git clone -b ${gluten_branch} https://gitcode.com/openeuler/Gluten.git ${WORKSPACE}/gluten
+
+    # OmniOperator 仓库
+    echo "克隆 OmniOperator 仓库..."
+    rm -rf ${WORKSPACE}/OmniOperatorJIT
+    git clone https://gitcode.com/openeuler/OmniOperator.git ${WORKSPACE}/OmniOperatorJIT
+
+    # libboundscheck 仓库
+    echo "克隆 libboundscheck 仓库..."
+    rm -rf ${WORKSPACE}/libboundscheck
+    git clone https://gitcode.com/openeuler/libboundscheck.git ${WORKSPACE}/libboundscheck
+    pushd ${WORKSPACE}/libboundscheck && git checkout tags/v1.1.16 && popd
+
+    echo "=== 代码仓库克隆完成 ==="
+}
 
 
 
@@ -139,7 +163,10 @@ function dopackage(){
  
 function Gluten_build(){
     parameter="$1"
-    case ${parameter} in 
+    # 先克隆代码仓库
+    clone_repos
+
+    case ${parameter} in
         "compile")
            Gluten_compile
             ;;

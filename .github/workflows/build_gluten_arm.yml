@@ -96,31 +96,6 @@ jobs:
             exit 1
         fi
 
-    - name: Pull code to container
-      run: |
-        gluten_branch="${{ inputs.gluten_branch || 'master' }}"
-        echo "拉取代码到容器，Gluten 分支：$gluten_branch"
-        docker exec -t -e gluten_branch="$gluten_branch" -u root gluten-project-builder bash -c "\
-            set -euo pipefail; \
-            \
-            # Gluten 仓库
-            echo '克隆 Gluten 仓库，分支：' \$gluten_branch; \
-            rm -rf /opt/gluten; \
-            git clone -b \$gluten_branch https://gitcode.com/openeuler/Gluten.git /opt/gluten; \
-            \
-            # OmniOperator 仓库
-            echo '克隆 OmniOperator 仓库...'; \
-            rm -rf /opt/OmniOperatorJIT; \
-            git clone https://gitcode.com/openeuler/OmniOperator.git /opt/OmniOperatorJIT; \
-            \
-            # libboundscheck 仓库
-            echo '克隆 libboundscheck 仓库...'; \
-            rm -rf /opt/libboundscheck; \
-            git clone https://gitcode.com/openeuler/libboundscheck.git /opt/libboundscheck; \
-            cd /opt/libboundscheck && git checkout tags/v1.1.16; \
-        "
-        echo "代码拉取完成，存放路径：/opt/"
-
     - name: Copy build scripts to container
       run: |
         echo "复制构建脚本到容器..."
