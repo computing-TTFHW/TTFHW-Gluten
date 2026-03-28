@@ -8,10 +8,59 @@
 .ci/build/
 ├── build_config.env          # 构建配置文件（外部依赖集中管理）
 ├── Gluten_compile.sh         # 构建主脚本
-├── code.xml                  # 代码仓库清单（用于生成元数据）
-├── Retrieve_source_code.py   # 源码信息收集脚本
+├── code.xml                  # 代码仓库清单
+├── Retrieve_source_code.py   # 仓库信息收集脚本
 ├── collect_software_info.py  # 软件包元数据生成脚本
 └── BUILD.md                  # 本文档
+```
+
+## 脚本架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          构建系统架构                                     │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────┐
+│  build_config.env   │  ← 配置中心：所有外部依赖、版本、路径
+└──────────┬──────────┘
+           │ source
+           ▼
+┌─────────────────────┐
+│  Gluten_compile.sh  │  ← 主入口：编排构建流程
+└──────────┬──────────┘
+           │ 调用
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            构建流程                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ clone_repos  │→ │ compile_*    │→ │ deploy_*     │→ │ package      │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           │ 打包阶段调用
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Python 脚本协作                                    │
+│                                                                          │
+│  collect_software_info.py                                                │
+│       │                                                                  │
+│       ├── calculate_sha256()      # 计算软件包摘要                        │
+│       │                                                                  │
+│       └── subprocess 调用                                                 │
+│              │                                                           │
+│              ▼                                                           │
+│       Retrieve_source_code.py                                            │
+│              │                                                           │
+│              ├── load_repository_config()  # 读取 code.xml               │
+│              └── find_repositories()       # 搜索 Git 仓库                │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────┐
+│    code.xml         │  ← 仓库清单：定义需要追踪的代码仓库
+└─────────────────────┘
 ```
 
 ## 文件说明
@@ -41,9 +90,9 @@
 | | `REPO_LIBBOUNDSCHECK_URL/DIR` | libboundscheck 仓库地址和目录名 |
 | **预编译依赖包** | `OBS_BASE_URL` | 华为云 OBS 基础地址 |
 | | `OMNI_OPERATOR_PACKAGE_PATH_*` | OmniOperator 运行时包路径 |
-| | `NATIVE_reader_PACKAGE_PATH` | Native Reader 包路径 |
+| | `NATIVE_READER_PACKAGE_PATH` | Native Reader 包路径 |
 | | `ARROW_PACKAGE_PATH` | Arrow 预编译包路径 |
-| **系统依赖库** | `DEPENDENCIES_GlUTEN_PATH` | Gluten 系统依赖库路径 |
+| **系统依赖库** | `DEPENDENCIES_GLUTEN_PATH` | Gluten 系统依赖库路径 |
 | | `DEPENDENCIES_ADAPTOR_PATH` | Adaptor 系统依赖库路径 |
 | **Maven 依赖** | `*_GROUP_ID/ARTIFACT_ID` | Maven 依赖坐标 |
 | | `MAVEN_PROFILE_*` | Maven Profile 配置 |
@@ -62,8 +111,8 @@ source build_config.env
 
 **命令用法：**
 ```bash
-./Gluten_compile.sh compile   # 仅编译
-./Gluten_compile.sh package   # 编译并打包
+./Gluten_compile.sh compile        # 仅编译
+./Gluten_compile.sh package        # 编译并打包
 ./Gluten_compile.sh coverages_cpp  # 代码覆盖率测试
 ```
 
@@ -110,13 +159,15 @@ source build_config.env
 | `OmniOperatorJIT` | https://gitcode.com/openeuler/OmniOperator.git | JIT 运行时 |
 | `libboundscheck` | https://gitcode.com/openeuler/libboundscheck.git | 安全边界检查库 |
 
-> **注意：** 只保留实际克隆使用的仓库，移除了未使用的配置。
+> **设计原则：** 只保留实际克隆使用的仓库。如需添加新仓库，需同步更新 `build_config.env`、`code.xml` 和 `Gluten_compile.sh`。
 
 ---
 
 ### 4. Retrieve_source_code.py
 
 **作用：** 查找工作空间中的 Git 仓库，收集分支/tag、commit ID 等信息。
+
+**设计：** 面向对象设计，`RepositoryInfoCollector` 类封装所有功能。
 
 **命令用法：**
 ```bash
@@ -145,13 +196,15 @@ python3 Retrieve_source_code.py [xml_file] [workspace] [output_file]
 **特性：**
 - 支持命令行参数，灵活指定输入输出
 - 限制搜索深度（默认 4 级），提高效率
-- 统一字段命名，与 `collect_software_info.py` 保持一致
+- 统一字段命名（英文），便于后续处理
 
 ---
 
 ### 5. collect_software_info.py
 
-**作用：** 为构建产物生成完整的元数据 JSON 文件（SHA256、仓库信息、构建时间）。
+**作用：** 为构建产物生成完整的元数据 JSON 文件。
+
+**设计：** 面向对象设计，`SoftwareMetadataGenerator` 类封装所有功能。**复用 `Retrieve_source_code.py` 的仓库信息收集功能**，避免代码重复。
 
 **命令用法：**
 ```bash
@@ -169,7 +222,7 @@ python3 collect_software_info.py [options] <package_file>
 **输出格式：**
 ```json
 {
-    "sha256Sum": "软件包SHA256摘要",
+    "sha256Sum": "abc123...def456",
     "repoInfo": [
         {
             "repoUrl": "https://gitcode.com/openeuler/Gluten.git",
@@ -181,6 +234,12 @@ python3 collect_software_info.py [options] <package_file>
     "buildTime": "20260328153022"
 }
 ```
+
+**内部流程：**
+1. 计算软件包的 SHA256 摘要
+2. 通过 subprocess 调用 `Retrieve_source_code.py` 收集仓库信息
+3. 获取当前时间作为构建时间
+4. 组装并输出 JSON 元数据文件
 
 ## 构建流程
 
@@ -217,7 +276,7 @@ python3 collect_software_info.py [options] <package_file>
 ┌──────────────┐     ┌──────────────────────────────────────┐
 │ 克隆代码仓库 │ ──▶ │ Gluten (指定分支)                     │
 │              │     │ OmniOperator                          │
-│              │     │ libboundscheck (指定版本)              │
+│              │     │ libboundscheck (v1.1.16)              │
 └──────┬───────┘     └──────────────────────────────────────┘
        │
        ▼
@@ -260,13 +319,12 @@ python3 collect_software_info.py [options] <package_file>
 └──────┬───────┘     └──────────────────────────────────────┘
        │
        ▼
-┌──────────────┐
-│ 生成元数据   │
-│              │
-│ - repositories_info.json              │
-│ - 软件包 SHA256                        │
-│ - 构建时间                             │
-└──────┬───────┘
+┌──────────────┐     ┌──────────────────────────────────────┐
+│ 生成元数据   │ ──▶ │ collect_software_info.py             │
+│              │     │   ├── SHA256 摘要                     │
+│              │     │   ├── 仓库信息 (调用 Retrieve_*)      │
+│              │     │   └── 构建时间                        │
+└──────┬───────┘     └──────────────────────────────────────┘
        │
        ▼
 ┌──────────────┐     ┌──────────────────────────────────────┐
@@ -334,7 +392,7 @@ python3 collect_software_info.py [options] <package_file>
 OMNI_OPERATOR_VERSION=2.2.0  # 新版本号
 ```
 
-同步更新 `OmniOperator_PACKAGE_PATH_*` 路径（如有变化）。
+同步更新 `OMNI_OPERATOR_PACKAGE_PATH_*` 路径（如有变化）。
 
 ### 升级 Arrow 版本
 
@@ -355,18 +413,25 @@ MAVEN_HOME=/opt/buildtools/apache-maven/apache-maven-3.9.x  # 升级 Maven
 
 ### 添加新的代码仓库
 
-1. 在 `build_config.env` 添加：
+需要同步修改 3 个文件：
+
+1. **`build_config.env`** 添加仓库配置：
 ```bash
 REPO_NEWREPO_URL=https://xxx.git
 REPO_NEWREPO_DIR=newrepo
 ```
 
-2. 在 `code.xml` 添加：
+2. **`code.xml`** 添加仓库条目：
 ```xml
 <repo url="https://xxx.git" dir="newrepo"/>
 ```
 
-3. 在 `Gluten_compile.sh` 的 `clone_repos()` 函数中添加克隆逻辑。
+3. **`Gluten_compile.sh`** 的 `clone_repos()` 函数添加克隆逻辑：
+```bash
+echo "克隆 newrepo 仓库..."
+rm -rf ${WORKSPACE}/${REPO_NEWREPO_DIR}
+git clone ${REPO_NEWREPO_URL} ${WORKSPACE}/${REPO_NEWREPO_DIR}
+```
 
 ## CI Workflow 流程
 
@@ -418,3 +483,11 @@ Spark 版本由 `gluten_branch` 自动决定：
 - 其他分支 → Spark 3.4
 
 如需手动指定，修改 `Gluten_compile.sh` 中的 `compile_gluten()` 函数。
+
+### Q: Python 脚本报错找不到模块？
+
+确保在正确的工作目录下执行，或使用绝对路径：
+```bash
+python3 ${WORKSPACE}/.ci/build/Retrieve_source_code.py ...
+python3 ${WORKSPACE}/.ci/build/collect_software_info.py ...
+```
