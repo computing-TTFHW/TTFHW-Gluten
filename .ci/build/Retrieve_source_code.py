@@ -100,7 +100,7 @@ def find_matching_directories(root_dir, target_dirs):
 
 def main():
     # XML文件路径
-    xml_file_path = "BoostKit_CI/sourcecode/bigdata/code.xml"
+    xml_file_path = ".ci/build/code.xml"
     
     # 加载仓库信息
     repos_info = load_repositories(xml_file_path)
