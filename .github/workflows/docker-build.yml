@@ -33,7 +33,7 @@ jobs:
   # ==================== Stage 1: 构建基础镜像 (tag: 26330_01) ====================
   stage-1:
     name: Build Stage 1 → 26330_01
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-arm
     if: inputs.build_stage == 'all' || inputs.build_stage == 'stage-1' || github.event_name == 'push'
     outputs:
       image_full: ${{ steps.image_info.outputs.image_full }}
@@ -53,11 +53,6 @@ jobs:
           IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
           echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_01" >> $GITHUB_OUTPUT
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -95,7 +90,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=stage1
           build-args: |
             BASE_IMAGE=${{ env.SWR_BASE_IMAGE }}
-          platforms: linux/arm64
           provenance: false
           sbom: false
 
@@ -108,7 +102,7 @@ jobs:
   # ==================== Stage 2: 应用镜像 (tag: 26330_02) ====================
   stage-2:
     name: Build Stage 2 → 26330_02
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-arm
     needs: stage-1
     if: always() && (needs.stage-1.result == 'success' || inputs.build_stage == 'stage-2')
     outputs:
@@ -129,11 +123,6 @@ jobs:
           IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
           echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02" >> $GITHUB_OUTPUT
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -183,7 +172,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=stage2
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.base_image }}
-          platforms: linux/arm64
           provenance: false
           sbom: false
 
