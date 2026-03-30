@@ -1,18 +1,20 @@
 # ============================================================
 # openEuler 22.03 SP3 应用依赖镜像 (Stage 2)
+# 输出镜像: ghcr.io/{owner}/openeuler-build:26330_02
+# 基础镜像: ghcr.io/{owner}/openeuler-build:26330_01 (Stage 1)
 # 包含: Arrow, ORC, Hadoop, jemalloc, zstd, lz4, snappy,
 #       json, jsoncpp, zlib, zlib-ng, cyrus-sasl, googletest,
 #       xxHash, rocksdb, abseil-cpp, re2
-# 依赖: Stage 1 (01.Dockerfile) 的构建产物
 # ============================================================
 
+# 默认使用华为云 SWR 的镜像作为后备，实际构建时通过 BASE_IMAGE 参数传入 ghcr 镜像
 ARG BASE_IMAGE=swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:26330_01
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="kunpeng-team"
 LABEL description="openEuler 22.03 SP3 application dependencies image"
 LABEL stage="2"
-LABEL version="1.0"
+LABEL tag="26330_02"
 
 # ==================== 版本参数 ====================
 ARG ARROW_VERSION=apache-arrow-11.0.0

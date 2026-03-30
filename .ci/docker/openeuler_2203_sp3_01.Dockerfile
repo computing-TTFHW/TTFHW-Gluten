@@ -1,15 +1,17 @@
 # ============================================================
 # openEuler 22.03 SP3 工具链基础镜像 (Stage 1)
+# 输出镜像: ghcr.io/{owner}/openeuler-build:26330_01
 # 包含: JDK21 (BiSheng), Maven, CMake, Protobuf, Lcov, LLVM-15
 # ============================================================
 
+# 基础镜像使用华为云 SWR 的 openEuler 官方镜像
 ARG BASE_IMAGE=swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:latest
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="kunpeng-team"
 LABEL description="openEuler 22.03 SP3 toolchain base image"
 LABEL stage="1"
-LABEL version="1.0"
+LABEL tag="26330_01"
 
 # ==================== 版本参数 ====================
 ARG BISHENG_JDK_VERSION=21.0.9-b11

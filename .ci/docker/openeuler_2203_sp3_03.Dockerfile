@@ -1,16 +1,18 @@
 # ============================================================
 # openEuler 22.03 SP3 Jenkins Agent 镜像 (Stage 3)
+# 输出镜像: ghcr.io/{owner}/openeuler-build:26330_03
+# 基础镜像: ghcr.io/{owner}/openeuler-build:26330_02 (Stage 2)
 # 包含: JDK8, fmt, folly, Jenkins Agent (JDK17)
-# 依赖: Stage 2 (02.Dockerfile) 的构建产物
 # ============================================================
 
+# 默认使用华为云 SWR 的镜像作为后备，实际构建时通过 BASE_IMAGE 参数传入 ghcr 镜像
 ARG BASE_IMAGE=swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:26330_02
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="kunpeng-team"
 LABEL description="openEuler 22.03 SP3 Jenkins agent with JDK8, fmt, folly"
 LABEL stage="3"
-LABEL version="1.0"
+LABEL tag="26330_03"
 
 # ==================== 版本参数 ====================
 ARG JDK8_VERSION=462
