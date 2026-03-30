@@ -26,7 +26,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/openeuler-build
   # 华为云 SWR 基础镜像
   SWR_BASE_IMAGE: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:latest
 
@@ -37,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     if: inputs.build_stage == 'all' || inputs.build_stage == 'stage-1' || github.event_name == 'push'
     outputs:
-      image_full: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01
+      image_full: ${{ steps.image_info.outputs.image_full }}
     permissions:
       contents: read
       packages: write
@@ -45,6 +44,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set image name (lowercase)
+        id: image_info
+        run: |
+          # Docker 镜像名称必须是小写
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_01" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -81,8 +89,8 @@ jobs:
           file: .ci/docker/openeuler_2203_sp3_01.Dockerfile
           push: ${{ steps.push_flag.outputs.should_push == 'true' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_01
+            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:latest
           cache-from: type=gha,scope=stage1
           cache-to: type=gha,mode=max,scope=stage1
           build-args: |
@@ -94,7 +102,7 @@ jobs:
       - name: Show build result
         run: |
           echo "### Stage 1 构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "- 镜像: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 镜像: \`${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_01\`" >> $GITHUB_STEP_SUMMARY
           echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
 
   # ==================== Stage 2: 应用镜像 (tag: 26330_02) ====================
@@ -104,7 +112,7 @@ jobs:
     needs: stage-1
     if: always() && (needs.stage-1.result == 'success' || inputs.build_stage == 'stage-2')
     outputs:
-      image_full: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02
+      image_full: ${{ steps.image_info.outputs.image_full }}
     permissions:
       contents: read
       packages: write
@@ -112,6 +120,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set image name (lowercase)
+        id: image_info
+        run: |
+          # Docker 镜像名称必须是小写
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -145,7 +162,7 @@ jobs:
         run: |
           # 单独构建 stage-2 时，使用已推送的 stage-1 镜像
           if [ "${{ inputs.build_stage }}" = "stage-2" ]; then
-            BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01"
+            BASE="${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_01"
             echo "单独构建 Stage 2，使用已推送的 Stage 1 镜像: ${BASE}"
           else
             BASE="${{ needs.stage-1.outputs.image_full }}"
@@ -161,7 +178,7 @@ jobs:
           file: .ci/docker/openeuler_2203_sp3_02.Dockerfile
           push: ${{ steps.push_flag.outputs.should_push == 'true' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02
+            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_02
           cache-from: type=gha,scope=stage2
           cache-to: type=gha,mode=max,scope=stage2
           build-args: |
@@ -174,7 +191,7 @@ jobs:
         run: |
           echo "### Stage 2 构建完成" >> $GITHUB_STEP_SUMMARY
           echo "- 基础镜像: \`${{ steps.base.outputs.base_image }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 镜像: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 镜像: \`${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_02\`" >> $GITHUB_STEP_SUMMARY
           echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
 
   # ==================== 构建摘要 ====================
@@ -185,8 +202,16 @@ jobs:
     if: always()
 
     steps:
+      - name: Set image name (lowercase)
+        id: image_info
+        run: |
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_name=${OWNER_LOWER}/openeuler-build" >> $GITHUB_OUTPUT
+
       - name: Generate build summary
         run: |
+          IMAGE_NAME="${{ steps.image_info.outputs.image_name }}"
+
           echo "## Docker 镜像构建结果" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Tag | 状态 | 镜像地址 |" >> $GITHUB_STEP_SUMMARY
@@ -194,7 +219,7 @@ jobs:
 
           # Stage 1
           if [ "${{ needs.stage-1.result }}" = "success" ]; then
-            echo "| Stage 1 (基础镜像) | 26330_01 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 1 (基础镜像) | 26330_01 | ✅ 成功 | \`${{ env.REGISTRY }}/${IMAGE_NAME}:26330_01\` |" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.stage-1.result }}" = "skipped" ]; then
             echo "| Stage 1 (基础镜像) | 26330_01 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
           else
@@ -203,7 +228,7 @@ jobs:
 
           # Stage 2
           if [ "${{ needs.stage-2.result }}" = "success" ]; then
-            echo "| Stage 2 (应用镜像) | 26330_02 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 2 (应用镜像) | 26330_02 | ✅ 成功 | \`${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02\` |" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.stage-2.result }}" = "skipped" ]; then
             echo "| Stage 2 (应用镜像) | 26330_02 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
           else
@@ -243,5 +268,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# 拉取最终镜像" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
