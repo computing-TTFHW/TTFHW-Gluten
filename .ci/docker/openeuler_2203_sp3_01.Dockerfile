@@ -46,8 +46,7 @@ ENV LANGUAGE=C.utf8
 # ==================== 第一层：配置 yum repo ====================
 COPY openEuler.repo /etc/yum.repos.d/openEuler.repo
 RUN set -ex && \
-    echo "140.82.112.4 github.com" >> /etc/hosts \
-    && yum clean all \
+    yum clean all \
     && yum makecache
 
 # ==================== 第二层：安装系统依赖包 ====================
@@ -243,4 +242,4 @@ ENV LLVM_HOME=/opt/buildtools/LLVM-${LLVM_VERSION}
 ENV CMAKE_ROOT=/opt/buildtools/cmake-${CMAKE_VERSION}-linux-aarch64/share
 ENV PROTOBUF_HOME=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}
 ENV PATH=/opt/buildtools/cmake-${CMAKE_VERSION}-linux-aarch64/bin:/opt/buildtools/LLVM-${LLVM_VERSION}/bin:/opt/buildtools/apache-maven/apache-maven-${MAVEN_VERSION}/bin:/opt/buildtools/bisheng-jdk-${BISHENG_JDK_VERSION%%-*}/bin:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/bin:$PATH
-ENV CLASSPATH=${JAVA_HOME}/lib:$CLASSPATH
+ENV CLASSPATH=/opt/buildtools/bisheng-jdk-${BISHENG_JDK_VERSION%%-*}/lib
