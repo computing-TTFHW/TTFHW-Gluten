@@ -62,13 +62,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine push flag
+        id: push_flag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.push_images }}" = "true" ]; then
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_push=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Stage 1
         id: build
         uses: docker/build-push-action@v5
         with:
           context: .ci/docker
           file: .ci/docker/openeuler_2203_sp3_01.Dockerfile
-          push: github.event_name == 'push' || inputs.push_images == true
+          push: ${{ steps.push_flag.outputs.should_push == 'true' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
@@ -118,6 +129,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine push flag
+        id: push_flag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.push_images }}" = "true" ]; then
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_push=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Determine base image
         id: base
         run: |
@@ -137,7 +159,7 @@ jobs:
         with:
           context: .ci/docker
           file: .ci/docker/openeuler_2203_sp3_02.Dockerfile
-          push: github.event_name == 'push' || inputs.push_images == true
+          push: ${{ steps.push_flag.outputs.should_push == 'true' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02
           cache-from: type=gha,scope=stage2
