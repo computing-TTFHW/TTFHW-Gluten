@@ -1,10 +1,13 @@
 # ============================================================
-# openEuler 22.03 SP3 应用依赖镜像 (Stage 2)
+# openEuler 22.03 SP3 应用镜像 (Stage 2)
 # 输出镜像: ghcr.io/{owner}/openeuler-build:26330_02
 # 基础镜像: ghcr.io/{owner}/openeuler-build:26330_01 (Stage 1)
-# 包含: Arrow, ORC, Hadoop, jemalloc, zstd, lz4, snappy,
-#       json, jsoncpp, zlib, zlib-ng, cyrus-sasl, googletest,
-#       xxHash, rocksdb, abseil-cpp, re2
+# 包含:
+#   - 应用依赖库: Arrow, ORC, Hadoop, jemalloc, zstd, lz4, snappy 等
+#   - 测试工具: googletest
+#   - OmniStream 依赖: xxHash, rocksdb
+#   - Gluten 依赖: abseil-cpp, re2
+#   - Jenkins Agent 配置
 # ============================================================
 
 # 默认使用华为云 SWR 的镜像作为后备，实际构建时通过 BASE_IMAGE 参数传入 ghcr 镜像
@@ -12,11 +15,12 @@ ARG BASE_IMAGE=swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lt
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="kunpeng-team"
-LABEL description="openEuler 22.03 SP3 application dependencies image"
+LABEL description="openEuler 22.03 SP3 application image with dependencies and Jenkins Agent"
 LABEL stage="2"
 LABEL tag="26330_02"
 
 # ==================== 版本参数 ====================
+# 应用依赖
 ARG ARROW_VERSION=apache-arrow-11.0.0
 ARG JSON_VERSION=v3.11.3
 ARG JEMALLOC_VERSION=5.3.0
@@ -35,26 +39,15 @@ ARG ROCKSDB_VERSION=v8.11.4
 ARG ABSEIL_VERSION=20250127.0
 ARG RE2_VERSION=2024-07-02
 
-# ==================== 公共环境变量 ====================
-ENV REPO_URL_CI=""
-ENV REPO_URL_BMC=""
-ENV INSTALL_LINUX_DIR="/tmp"
+# Jenkins Agent
+ARG JENKINS_VERSION=3107.v665000b_51092
+ARG user=jenkins
+ARG group=jenkins
+ARG uid=1000
+ARG gid=1000
+ARG AGENT_WORKDIR=/home/${user}/agent
 
-# ==================== 构建环境变量 ====================
-ENV JAVA_HOME=/opt/buildtools/bisheng-jdk-21.0.9
-ENV MAVEN_HOME=/opt/buildtools/apache-maven/apache-maven-3.9.9
-ENV LLVM_HOME=/opt/buildtools/LLVM-15.0.4
-ENV CMAKE_ROOT=/opt/buildtools/cmake-3.28.2-linux-aarch64/share
-ENV PROTOBUF_HOME=/opt/buildtools/Protobuf-3.21.9
-ENV PATH=/opt/buildtools/cmake-3.28.2-linux-aarch64/bin:/opt/buildtools/LLVM-15.0.4/bin:/opt/buildtools/apache-maven/apache-maven-3.9.9/bin:/opt/buildtools/bisheng-jdk-21.0.9/bin:/opt/buildtools/Protobuf-3.21.9/bin:$PATH
-
-# ==================== 第一层：安装系统依赖 ====================
-RUN set -ex && \
-    echo "140.82.112.4 github.com" >> /etc/hosts \
-    && yum install -y openssl \
-    && yum clean all
-
-# ==================== 第二层：安装基础压缩库 ====================
+# ==================== 第一层：安装基础压缩库 ====================
 # zlib
 RUN set -ex && \
     cd /tmp \
@@ -83,7 +76,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf zstd
 
-# ==================== 第三层：安装 snappy ====================
+# ==================== 第二层：安装 snappy ====================
 RUN set -ex && \
     cd /tmp \
     && git clone https://gitee.com/src-openeuler/snappy.git \
@@ -104,7 +97,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf snappy
 
-# ==================== 第四层：安装 jemalloc ====================
+# ==================== 第三层：安装 jemalloc ====================
 RUN set -ex && \
     cd /tmp \
     && git clone https://gitee.com/mirrors/jemalloc.git \
@@ -114,7 +107,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf jemalloc
 
-# ==================== 第五层：安装 cyrus-sasl ====================
+# ==================== 第四层：安装 cyrus-sasl ====================
 RUN set -ex && \
     cd /tmp \
     && git clone https://gitee.com/mirrors/cyrus-sasl.git \
@@ -124,7 +117,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf cyrus-sasl
 
-# ==================== 第六层：安装 zlib-ng ====================
+# ==================== 第五层：安装 zlib-ng ====================
 RUN set -ex && \
     cd /tmp \
     && git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/b40eab964ee243e1a43336403eba828f/OpenSourceCenter/Adaptor/zlib-ng.git \
@@ -140,7 +133,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf zlib-ng
 
-# ==================== 第七层：安装 JSON 库 ====================
+# ==================== 第六层：安装 JSON 库 ====================
 # nlohmann-json
 RUN set -ex && \
     cd /tmp \
@@ -168,7 +161,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf jsoncpp
 
-# ==================== 第八层：安装 Arrow ====================
+# ==================== 第七层：安装 Arrow ====================
 RUN set -ex && \
     cd /tmp \
     && git clone https://gitee.com/kunpengcompute/boostkit-bigdata.git -b main \
@@ -203,7 +196,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf arrow boostkit-bigdata
 
-# ==================== 第九层：安装 ORC ====================
+# ==================== 第八层：安装 ORC ====================
 RUN set -ex && \
     export ZSTD_HOME=/usr/local \
     && export LZ4_HOME=/usr/local \
@@ -239,7 +232,7 @@ RUN set -ex && \
     && cp -rf /usr/local/include/orc/* /opt/Adaptor/lib/include/ \
     && cd /tmp && rm -rf orc
 
-# ==================== 第十层：安装 Hadoop ====================
+# ==================== 第九层：安装 Hadoop ====================
 RUN set -ex && \
     cd /tmp \
     && git clone https://gitee.com/mirrors/hadoop.git \
@@ -259,7 +252,7 @@ RUN set -ex && \
     && cp -rf hadoop/hadoop-hdfs-project/hadoop-hdfs-native-client/target/hadoop-hdfs-native-client-3.2.0/include/* $OMNI_HOME/lib/include/ \
     && rm -rf hadoop boostkit-bigdata
 
-# ==================== 第十一层：安装测试工具 ====================
+# ==================== 第十层：安装测试工具 ====================
 # googletest
 RUN set -ex && \
     cd /tmp \
@@ -270,7 +263,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf googletest
 
-# ==================== 第十二层：安装 OmniStream 依赖 ====================
+# ==================== 第十一层：安装 OmniStream 依赖 ====================
 # xxHash
 RUN set -ex && \
     cd /tmp \
@@ -299,7 +292,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf rocksdb
 
-# ==================== 第十三层：安装 Gluten 依赖 ====================
+# ==================== 第十二层：安装 Gluten 依赖 ====================
 # abseil-cpp
 RUN set -ex && \
     mkdir -p /opt/Gluten \
@@ -329,6 +322,29 @@ RUN set -ex && \
     && make -j$(nproc) \
     && make install \
     && cd /tmp && rm -rf re2
+
+# ==================== 第十三层：安装 Jenkins Agent ====================
+RUN set -ex && \
+    # 下载 Jenkins remoting jar
+    curl --create-dirs -fsSLo /usr/share/jenkins/agent.jar \
+        https://repo.jenkins-ci.org/public/org/jenkins-ci/main/remoting/${JENKINS_VERSION}/remoting-${JENKINS_VERSION}.jar \
+    && chmod 755 /usr/share/jenkins \
+    && chmod 644 /usr/share/jenkins/agent.jar \
+    && ln -sf /usr/share/jenkins/agent.jar /usr/share/jenkins/slave.jar \
+    # 下载 Jenkins agent 脚本
+    && curl --create-dirs -fsSLo /usr/local/bin/jenkins-agent \
+        http://121.36.53.23/AdoptOpenJDK/jenkins-agent \
+    && chmod a+rx /usr/local/bin/jenkins-agent \
+    && ln -s /usr/local/bin/jenkins-agent /usr/local/bin/jenkins-slave \
+    # 创建 Jenkins 用户
+    && groupadd -g ${gid} ${group} \
+    && useradd -c "Jenkins user" -d /home/${user} -u ${uid} -g ${gid} -m ${user} \
+    && echo "${user} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+    && mkdir -p /home/${user}/.jenkins \
+    && mkdir -p ${AGENT_WORKDIR} \
+    && mkdir -p /tmp \
+    && chown -R ${uid}:${gid} /tmp \
+    && chmod -R 755 /tmp
 
 # ==================== 第十四层：收集依赖产物 ====================
 RUN set -ex && \
@@ -366,3 +382,15 @@ RUN set -ex && \
     && cp /usr/lib64/librocksdb.so.8.11.4 ./librocksdb.so.8 \
     && cp /usr/local/lib64/libsnappy.so.1.1.10 ./libsnappy.so.1 \
     && rm -rf /tmp/*
+
+# ==================== 环境变量 ====================
+ENV AGENT_WORKDIR=${AGENT_WORKDIR}
+
+# ==================== 切换用户 ====================
+USER ${user}
+
+VOLUME ~/.jenkins
+VOLUME ${AGENT_WORKDIR}
+WORKDIR ${AGENT_WORKDIR}
+
+ENTRYPOINT ["jenkins-agent"]

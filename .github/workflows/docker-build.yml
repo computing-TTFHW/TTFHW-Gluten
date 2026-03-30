@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       build_stage:
-        description: '构建阶段 (all, stage-1, stage-2, stage-3)'
+        description: '构建阶段 (all, stage-1, stage-2)'
         required: true
         default: 'all'
         type: choice
@@ -18,7 +18,6 @@ on:
           - all
           - stage-1
           - stage-2
-          - stage-3
       push_images:
         description: '推送镜像到仓库'
         required: true
@@ -32,7 +31,7 @@ env:
   SWR_BASE_IMAGE: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:latest
 
 jobs:
-  # ==================== Stage 1: 工具链基础镜像 (tag: 26330_01) ====================
+  # ==================== Stage 1: 构建基础镜像 (tag: 26330_01) ====================
   stage-1:
     name: Build Stage 1 → 26330_01
     runs-on: ubuntu-latest
@@ -72,7 +71,7 @@ jobs:
           push: github.event_name == 'push' || inputs.push_images == true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:stage1-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha,scope=stage1
           cache-to: type=gha,mode=max,scope=stage1
           build-args: |
@@ -87,7 +86,7 @@ jobs:
           echo "- 镜像: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01\`" >> $GITHUB_STEP_SUMMARY
           echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
 
-  # ==================== Stage 2: 应用依赖镜像 (tag: 26330_02) ====================
+  # ==================== Stage 2: 应用镜像 (tag: 26330_02) ====================
   stage-2:
     name: Build Stage 2 → 26330_02
     runs-on: ubuntu-latest
@@ -141,7 +140,6 @@ jobs:
           push: github.event_name == 'push' || inputs.push_images == true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:stage2-latest
           cache-from: type=gha,scope=stage2
           cache-to: type=gha,mode=max,scope=stage2
           build-args: |
@@ -157,82 +155,11 @@ jobs:
           echo "- 镜像: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02\`" >> $GITHUB_STEP_SUMMARY
           echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
 
-  # ==================== Stage 3: Jenkins Agent 镜像 (tag: 26330_03) ====================
-  stage-3:
-    name: Build Stage 3 → 26330_03
-    runs-on: ubuntu-latest
-    needs: stage-2
-    if: always() && (needs.stage-2.result == 'success' || inputs.build_stage == 'stage-3')
-    outputs:
-      image_full: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_03
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        if: github.event_name == 'push' || inputs.push_images == true
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Determine base image
-        id: base
-        run: |
-          # 单独构建 stage-3 时，使用已推送的 stage-2 镜像
-          if [ "${{ inputs.build_stage }}" = "stage-3" ]; then
-            BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02"
-            echo "单独构建 Stage 3，使用已推送的 Stage 2 镜像: ${BASE}"
-          else
-            BASE="${{ needs.stage-2.outputs.image_full }}"
-            echo "正常构建，使用 Stage 2 输出: ${BASE}"
-          fi
-          echo "base_image=${BASE}" >> $GITHUB_OUTPUT
-
-      - name: Build and push Stage 3
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .ci/docker
-          file: .ci/docker/openeuler_2203_sp3_03.Dockerfile
-          push: github.event_name == 'push' || inputs.push_images == true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_03
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:stage3-latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha,scope=stage3
-          cache-to: type=gha,mode=max,scope=stage3
-          build-args: |
-            BASE_IMAGE=${{ steps.base.outputs.base_image }}
-          platforms: linux/arm64
-          provenance: false
-          sbom: false
-
-      - name: Show build result
-        run: |
-          echo "### Stage 3 构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "- 基础镜像: \`${{ steps.base.outputs.base_image }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 镜像: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_03\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-
   # ==================== 构建摘要 ====================
   summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [stage-1, stage-2, stage-3]
+    needs: [stage-1, stage-2]
     if: always()
 
     steps:
@@ -245,55 +172,54 @@ jobs:
 
           # Stage 1
           if [ "${{ needs.stage-1.result }}" = "success" ]; then
-            echo "| Stage 1 | 26330_01 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 1 (基础镜像) | 26330_01 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_01\` |" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.stage-1.result }}" = "skipped" ]; then
-            echo "| Stage 1 | 26330_01 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 1 (基础镜像) | 26330_01 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| Stage 1 | 26330_01 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 1 (基础镜像) | 26330_01 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
           fi
 
           # Stage 2
           if [ "${{ needs.stage-2.result }}" = "success" ]; then
-            echo "| Stage 2 | 26330_02 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 2 (应用镜像) | 26330_02 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02\` |" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.stage-2.result }}" = "skipped" ]; then
-            echo "| Stage 2 | 26330_02 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 2 (应用镜像) | 26330_02 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| Stage 2 | 26330_02 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Stage 3
-          if [ "${{ needs.stage-3.result }}" = "success" ]; then
-            echo "| Stage 3 | 26330_03 | ✅ 成功 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_03\` |" >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ needs.stage-3.result }}" = "skipped" ]; then
-            echo "| Stage 3 | 26330_03 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Stage 3 | 26330_03 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage 2 (应用镜像) | 26330_02 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 构建流程图" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "SWR (openEuler 基础镜像)" >> $GITHUB_STEP_SUMMARY
+          echo "SWR (openEuler 22.03 SP3 基础镜像)" >> $GITHUB_STEP_SUMMARY
           echo "        │" >> $GITHUB_STEP_SUMMARY
           echo "        ▼" >> $GITHUB_STEP_SUMMARY
-          echo "┌─────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
-          echo "│ Stage 1: 工具链基础镜像         │" >> $GITHUB_STEP_SUMMARY
-          echo "│ Tag: 26330_01                   │" >> $GITHUB_STEP_SUMMARY
-          echo "│ (JDK21, Maven, CMake, LLVM...)  │" >> $GITHUB_STEP_SUMMARY
-          echo "└─────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
+          echo "┌─────────────────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
+          echo "│ Stage 1: 构建基础镜像 (26330_01)            │" >> $GITHUB_STEP_SUMMARY
+          echo "│ ─────────────────────────────────────────── │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • 编译工具链: JDK8/17/21, Maven, CMake      │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • LLVM-15, Protobuf, Lcov                   │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • 基础库: fmt, folly                        │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • Python 包, 所有系统依赖                   │" >> $GITHUB_STEP_SUMMARY
+          echo "└─────────────────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
           echo "        │" >> $GITHUB_STEP_SUMMARY
           echo "        ▼" >> $GITHUB_STEP_SUMMARY
-          echo "┌─────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
-          echo "│ Stage 2: 应用依赖镜像           │" >> $GITHUB_STEP_SUMMARY
-          echo "│ Tag: 26330_02                   │" >> $GITHUB_STEP_SUMMARY
-          echo "│ (Arrow, ORC, Hadoop...)         │" >> $GITHUB_STEP_SUMMARY
-          echo "└─────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
-          echo "        │" >> $GITHUB_STEP_SUMMARY
-          echo "        ▼" >> $GITHUB_STEP_SUMMARY
-          echo "┌─────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
-          echo "│ Stage 3: Jenkins Agent 镜像     │" >> $GITHUB_STEP_SUMMARY
-          echo "│ Tag: 26330_03                   │" >> $GITHUB_STEP_SUMMARY
-          echo "│ (JDK8, fmt, folly, Jenkins)     │" >> $GITHUB_STEP_SUMMARY
-          echo "└─────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
+          echo "┌─────────────────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
+          echo "│ Stage 2: 应用镜像 (26330_02)                │" >> $GITHUB_STEP_SUMMARY
+          echo "│ ─────────────────────────────────────────── │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • 应用依赖: Arrow, ORC, Hadoop              │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • 压缩库: jemalloc, zstd, lz4, snappy       │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • Gluten依赖: abseil-cpp, re2               │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • OmniStream: xxHash, rocksdb               │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • Jenkins Agent 配置                        │" >> $GITHUB_STEP_SUMMARY
+          echo "│ • 依赖产物收集                              │" >> $GITHUB_STEP_SUMMARY
+          echo "└─────────────────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 使用方式" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# 拉取最终镜像" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:26330_02" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
