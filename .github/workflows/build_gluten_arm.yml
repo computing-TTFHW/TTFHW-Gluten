@@ -44,13 +44,13 @@ jobs:
       uses: actions/cache@v4
       with:
         path: docker-image-cache
-        key: ${{ runner.os }}-arm-docker-openeuler22.03-arm64_003
+        key: ${{ runner.os }}-arm-docker-openeuler-build-26330_02
         restore-keys: |
           ${{ runner.os }}-arm-docker-
 
     - name: Load or pull Docker image
       run: |
-        IMAGE="swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003"
+        IMAGE="ghcr.io/computing-ttfhw/openeuler-build:26330_02"
         CACHE_FILE="${{ github.workspace }}/docker-image-cache/openeuler.tar"
 
         if [[ -f "$CACHE_FILE" ]]; then
@@ -58,15 +58,15 @@ jobs:
             docker load -i "$CACHE_FILE"
             echo "Docker镜像加载成功"
         else
-            echo "拉取SWR公开镜像：$IMAGE"
+            echo "拉取GHCR镜像：$IMAGE"
             if docker pull "$IMAGE"; then
-                echo "SWR镜像拉取成功"
+                echo "GHCR镜像拉取成功"
                 mkdir -p docker-image-cache
                 echo "保存镜像到缓存..."
                 docker save -o "$CACHE_FILE" "$IMAGE"
                 echo "镜像已缓存到: $CACHE_FILE"
             else
-                echo "SWR镜像拉取失败！请检查：1.镜像地址是否正确 2.网络是否能访问华为云SWR"
+                echo "GHCR镜像拉取失败！请检查：1.镜像地址是否正确 2.是否已登录 ghcr.io"
                 exit 1
             fi
         fi
@@ -86,7 +86,7 @@ jobs:
             --entrypoint /bin/sh \
             -v "${{ github.workspace }}/maven-docker-cache:/root/.m2" \
             --workdir "/opt" \
-            swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:arm64_003 \
+            ghcr.io/computing-ttfhw/openeuler-build:26330_02 \
             -c "tail -f /dev/null"
 
         if docker ps --filter "name=^/gluten-project-builder$" --format "{{.Names}}" | grep -q "^gluten-project-builder$"; then
