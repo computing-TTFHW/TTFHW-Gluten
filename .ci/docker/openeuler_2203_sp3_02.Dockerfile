@@ -182,18 +182,25 @@ RUN set -ex && \
 
 # ==================== 第八层：安装 Gluten 依赖 (abseil-cpp + re2 合并) ====================
 RUN set -ex && \
-    mkdir -p /opt/Gluten \
-    # abseil-cpp
+    # 配置 git 处理大仓库
+    git config --global http.postBuffer 524288000 \
+    && git config --global core.compression 0 \
+    && mkdir -p /opt/Gluten \
+    # abseil-cpp (使用 GitHub 源，更稳定)
     && cd /tmp \
-    && git clone -q https://gitee.com/mirrors/abseil-cpp.git \
-    && cd abseil-cpp && git checkout -q tags/${ABSEIL_VERSION} \
+    && for i in 1 2 3; do \
+        git clone --depth 1 --branch ${ABSEIL_VERSION} https://github.com/abseil/abseil-cpp.git && break || sleep 5; \
+       done \
+    && cd abseil-cpp \
     && mkdir -p build && cd build \
     && cmake -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DABSL_PROPAGATE_CXX_STD=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. \
     && make -j$(nproc) && make install \
     && cd /tmp && rm -rf abseil-cpp \
     # re2
-    && git clone -q https://gitee.com/mirrors/re2.git \
-    && cd re2 && git checkout -q tags/${RE2_VERSION} \
+    && for i in 1 2 3; do \
+        git clone --depth 1 --branch ${RE2_VERSION} https://github.com/google/re2.git && break || sleep 5; \
+       done \
+    && cd re2 \
     && mkdir build && cd build \
     && cmake -DBUILD_SHARED_LIBS=ON .. \
     && make -j$(nproc) && make install \
