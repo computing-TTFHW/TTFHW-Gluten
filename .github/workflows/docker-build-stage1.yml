@@ -130,6 +130,9 @@ jobs:
     if: success() && (github.event_name == 'push' || inputs.push_image == true)
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Trigger Stage 2 workflow
         run: |
           echo "🚀 触发 Stage 2 (依赖镜像) 构建..."
