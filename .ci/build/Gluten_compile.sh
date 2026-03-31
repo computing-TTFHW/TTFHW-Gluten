@@ -74,7 +74,8 @@ deploy_omni_operator() {
     elif [ "${gluten_branch}" == "master" ]; then
         package_path=${OMNI_OPERATOR_PACKAGE_PATH_MASTER}
     else
-        package_path="OmniOperator/${OmniOperatorJIT_branch}/Daily.26.0.0.B001"
+        # 使用 REPO_OMNIOPERATOR_DIR 作为分支名
+        package_path="OmniOperator/${REPO_OMNIOPERATOR_DIR}/Daily.26.0.0.B001"
     fi
 
     local zip_name=BoostKit-omniruntime-omnioperator-${OMNI_OPERATOR_VERSION}.zip
@@ -184,7 +185,14 @@ package_artifacts() {
     mkdir -p ${WORKSPACE}/tmppackage
 
     cp ${WORKSPACE}/${REPO_GLUTEN_DIR}/cpp-omni/build/releases/libspark_columnar_plugin.so ${WORKSPACE}/tmppackage/
-    cp ${WORKSPACE}/${REPO_GLUTEN_DIR}/package/target/gluten-omni-bundle-spark*_2.12-openEuler_22.03_aarch_64-1.3.0.jar ${WORKSPACE}/tmppackage/
+
+    # 查找并复制 JAR 文件（支持不同 Spark 版本）
+    local jar_file=$(find ${WORKSPACE}/${REPO_GLUTEN_DIR}/package/target -name "gluten-omni-bundle-spark*.jar" -type f | head -1)
+    if [ -n "${jar_file}" ]; then
+        cp "${jar_file}" ${WORKSPACE}/tmppackage/
+    else
+        echo "警告: 未找到 gluten-omni-bundle JAR 文件"
+    fi
 
     # libboundscheck 已在镜像中预装，从 /usr/local/lib 复制
     cp /usr/local/lib/libboundscheck*.so ${WORKSPACE}/tmppackage/
