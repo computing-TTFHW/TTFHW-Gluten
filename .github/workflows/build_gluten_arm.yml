@@ -64,20 +64,19 @@ jobs:
         IMAGE="ghcr.io/computing-ttfhw/gluten-build:deps-latest"
         CACHE_FILE="${{ github.workspace }}/docker-image-cache/gluten-build.tar"
 
-        if [[ -f "$CACHE_FILE" ]]; then
-            echo "从缓存加载Docker镜像..."
-            docker load -i "$CACHE_FILE"
-            echo "Docker镜像加载成功"
+        echo "尝试拉取最新镜像：$IMAGE"
+        if docker pull "$IMAGE"; then
+            echo "镜像拉取成功，更新缓存..."
+            mkdir -p docker-image-cache
+            docker save -o "$CACHE_FILE" "$IMAGE"
+            echo "镜像已缓存到: $CACHE_FILE"
         else
-            echo "拉取GHCR镜像：$IMAGE"
-            if docker pull "$IMAGE"; then
-                echo "GHCR镜像拉取成功"
-                mkdir -p docker-image-cache
-                echo "保存镜像到缓存..."
-                docker save -o "$CACHE_FILE" "$IMAGE"
-                echo "镜像已缓存到: $CACHE_FILE"
+            echo "镜像拉取失败，尝试从缓存加载..."
+            if [[ -f "$CACHE_FILE" ]]; then
+                docker load -i "$CACHE_FILE"
+                echo "Docker镜像从缓存加载成功"
             else
-                echo "GHCR镜像拉取失败！请检查：1.镜像地址是否正确 2.是否已登录 ghcr.io"
+                echo "缓存不存在！请检查：1.镜像地址是否正确 2.是否已登录 ghcr.io"
                 exit 1
             fi
         fi
