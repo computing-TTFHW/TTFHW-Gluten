@@ -2,7 +2,14 @@
 set -ex
 
 # ============================================================
-# Gluten 构建主脚本
+# Gluten 构建主脚本（简化版）
+#
+# 已在镜像中预装的内容：
+# - libboundscheck v1.1.16 (/usr/local/lib/*.so)
+# - Native Reader JAR (两个版本)
+# - Arrow 15.0.0 Maven JAR (~/.m2/repository/org/apache/)
+# - protoc 符号链接 (/usr/local/bin/protoc)
+# - 编译环境变量 (LD_LIBRARY_PATH, C_INCLUDE_PATH 等)
 # ============================================================
 
 # 获取脚本所在目录
@@ -25,29 +32,12 @@ init_environment() {
     rm -rf ${agentpath}
     mkdir -p ${agentpath}/software ${agentpath}/inner
 
-    # 设置构建工具环境变量
-    export JAVA_HOME=${JAVA_HOME}
-    export JRE_HOME=${JRE_HOME}
-    export MAVEN_HOME=${MAVEN_HOME}
-    export LLVM_HOME=${LLVM_HOME}
-    export PROTOBUF_HOME=${PROTOBUF_HOME}
-    export FMT_HOME=${FMT_HOME}
-    export FOLLY_HOME=${FOLLY_HOME}
-
-    # 设置 PATH
-    export PATH=${CMAKE_HOME}/bin:${LLVM_HOME}/bin:${MAVEN_HOME}/bin:${JAVA_HOME}/bin:${JRE_HOME}/bin:${PROTOBUF_HOME}/bin:$PATH
-
-    # 设置 CLASSPATH
-    export CLASSPATH=${JAVA_HOME}/lib:${JRE_HOME}/lib:$CLASSPATH
-
-    # Protobuf 配置
-    export CMAKE_PREFIX_PATH=${PROTOBUF_HOME}
-    export Protobuf_ROOT=${PROTOBUF_HOME}
-    export Protobuf_PROTOC_EXECUTABLE=${PROTOBUF_HOME}/bin/protoc
-
-    # 创建 protoc 符号链接
-    sudo ln -sf ${PROTOBUF_HOME}/bin/protoc /usr/local/bin/
-    protoc --version
+    # 环境变量已在镜像中固化，无需重复设置
+    # 仅添加运行时动态路径（OMNI_HOME）
+    export LD_LIBRARY_PATH=${OMNI_HOME}/lib:$LD_LIBRARY_PATH
+    export LIBRARY_PATH=${OMNI_HOME}/lib:$LIBRARY_PATH
+    export C_INCLUDE_PATH=${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
+    export CPLUS_INCLUDE_PATH=${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
 
     echo "=== 构建环境初始化完成 ==="
 }
@@ -66,57 +56,9 @@ clone_repos() {
     rm -rf ${WORKSPACE}/${REPO_OMNIOPERATOR_DIR}
     git clone ${REPO_OMNIOPERATOR_URL} ${WORKSPACE}/${REPO_OMNIOPERATOR_DIR}
 
-    # libboundscheck
-    echo "克隆 libboundscheck 仓库，版本: ${LIBBOUNDSCHECK_VERSION}"
-    rm -rf ${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}
-    git clone ${REPO_LIBBOUNDSCHECK_URL} ${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}
-    pushd ${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}
-    git checkout tags/${LIBBOUNDSCHECK_VERSION}
-    popd
+    # 注意：libboundscheck 已在镜像中预装，无需克隆和编译
 
     echo "=== 代码仓库克隆完成 ==="
-}
-
-# -------------------- 编译 libboundscheck --------------------
-compile_libboundscheck() {
-    echo "=== 编译 libboundscheck ==="
-
-    pushd ${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}
-    make CC=gcc
-    popd
-
-    export LD_LIBRARY_PATH=${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}/lib:$LD_LIBRARY_PATH
-    export LIBRARY_PATH=${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}/lib:$LIBRARY_PATH
-    # 设置 WORKSPACE 作为包含路径，以便找到 libboundscheck/include/securec.h
-    export C_INCLUDE_PATH=${WORKSPACE}:$C_INCLUDE_PATH
-    export CPLUS_INCLUDE_PATH=${WORKSPACE}:$CPLUS_INCLUDE_PATH
-
-    echo "=== libboundscheck 编译完成 ==="
-}
-
-# -------------------- 部署 Native Reader --------------------
-deploy_native_reader() {
-    echo "=== 部署 Native Reader ==="
-
-    mkdir -p ${WORKSPACE}/${REPO_GLUTEN_DIR}/3rdparty
-    pushd ${WORKSPACE}/${REPO_GLUTEN_DIR}/3rdparty
-
-    if [ "${gluten_branch}" == "2026_330_poc" ]; then
-        echo "gluten 2026_330_poc 分支已消减对 native-reader 的直接依赖"
-    else
-        local jar_name=${NATIVE_reader_ARTIFACT_ID}-3.4.3-${OMNI_OPERATOR_VERSION}.jar
-        wget "${OBS_BASE_URL}/${NATIVE_reader_PACKAGE_PATH}/${jar_name}"
-
-        mvn install:install-file \
-            -DgroupId=${NATIVE_reader_GROUP_ID} \
-            -DartifactId=${NATIVE_reader_ARTIFACT_ID} \
-            -Dversion=3.4.3-${OMNI_OPERATOR_VERSION} \
-            -Dpackaging=jar \
-            -Dfile=${jar_name}
-    fi
-    popd
-
-    echo "=== Native Reader 部署完成 ==="
 }
 
 # -------------------- 部署 OmniOperator 运行时 --------------------
@@ -169,25 +111,13 @@ deploy_omni_operator() {
     echo "=== OmniOperator 运行时部署完成 ==="
 }
 
-# -------------------- 部署 Arrow 预编译库 --------------------
-deploy_arrow() {
-    echo "=== 部署 Arrow 预编译库 ==="
-
-    pushd ~/.m2/repository/org/apache/
-    local zip_name=arrow-${ARROW_VERSION}.zip
-    wget "${OBS_BASE_URL}/${ARROW_PACKAGE_PATH}/${zip_name}"
-    unzip -o ${zip_name}
-    popd
-
-    echo "=== Arrow 预编译库部署完成 ==="
-}
-
 # -------------------- 设置编译环境 --------------------
 setup_compile_env() {
+    # 环境变量已在镜像中固化，仅添加 OMNI_HOME 相关路径
     export LD_LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:${OMNI_HOME}/lib:$LD_LIBRARY_PATH
     export LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:${OMNI_HOME}/lib:$LIBRARY_PATH
-    export C_INCLUDE_PATH=/usr/local/include/orc:${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
-    export CPLUS_INCLUDE_PATH=/usr/local/include/orc:${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
+    export C_INCLUDE_PATH=${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
+    export CPLUS_INCLUDE_PATH=${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
 }
 
 # -------------------- 编译 Gluten --------------------
@@ -224,10 +154,10 @@ compile_gluten() {
 build_compile() {
     init_environment
     clone_repos
-    compile_libboundscheck
-    deploy_native_reader
+    # compile_libboundscheck - 已在镜像中预装，已移除
+    # deploy_native_reader - 已在镜像中预装，已移除
     deploy_omni_operator
-    deploy_arrow
+    # deploy_arrow - 已在镜像中预装，已移除
     compile_gluten
 }
 
@@ -255,14 +185,11 @@ package_artifacts() {
 
     cp ${WORKSPACE}/${REPO_GLUTEN_DIR}/cpp-omni/build/releases/libspark_columnar_plugin.so ${WORKSPACE}/tmppackage/
     cp ${WORKSPACE}/${REPO_GLUTEN_DIR}/package/target/gluten-omni-bundle-spark*_2.12-openEuler_22.03_aarch_64-1.3.0.jar ${WORKSPACE}/tmppackage/
-    cp ${WORKSPACE}/${REPO_LIBBOUNDSCHECK_DIR}/lib/*.so ${WORKSPACE}/tmppackage/
-    cp ${WORKSPACE}/BoostKit-omniruntime-omnioperator-${OMNI_OPERATOR_VERSION}.zip ${WORKSPACE}/tmppackage/
 
-    # 复制 native-reader (如果存在)
-    local native_reader_jar="${WORKSPACE}/${REPO_GLUTEN_DIR}/3rdparty/boostkit-omniop-native-reader-*-${OMNI_OPERATOR_VERSION}.jar"
-    if [ -f "${native_reader_jar}" ]; then
-        cp ${native_reader_jar} ${WORKSPACE}/tmppackage/
-    fi
+    # libboundscheck 已在镜像中预装，从 /usr/local/lib 复制
+    cp /usr/local/lib/libboundscheck*.so ${WORKSPACE}/tmppackage/
+
+    cp ${WORKSPACE}/BoostKit-omniruntime-omnioperator-${OMNI_OPERATOR_VERSION}.zip ${WORKSPACE}/tmppackage/
 
     # 打包 Gluten 产物
     pushd ${WORKSPACE}/tmppackage
@@ -315,13 +242,8 @@ main() {
             build_compile
             package_artifacts
             ;;
-        "coverages_cpp")
-            init_environment
-            clone_repos
-            ut_Gluten
-            ;;
         *)
-            echo "用法: $0 {compile|package|coverages_cpp}"
+            echo "用法: $0 {compile|package}"
             exit 1
             ;;
     esac

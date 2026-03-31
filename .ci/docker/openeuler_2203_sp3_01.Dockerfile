@@ -156,6 +156,7 @@ RUN set -ex && \
     && ./configure --enable-static=no --prefix=/opt/buildtools/Protobuf-${PROTOBUF_VERSION} \
     && make -j$(nproc) \
     && make install \
+    && ln -sf /opt/buildtools/Protobuf-${PROTOBUF_VERSION}/bin/protoc /usr/local/bin/protoc \
     && cd /tmp \
     && rm -rf protobuf
 
@@ -243,3 +244,10 @@ ENV CMAKE_ROOT=/opt/buildtools/cmake-${CMAKE_VERSION}-linux-aarch64/share
 ENV PROTOBUF_HOME=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}
 ENV PATH=/opt/buildtools/cmake-${CMAKE_VERSION}-linux-aarch64/bin:/opt/buildtools/LLVM-${LLVM_VERSION}/bin:/opt/buildtools/apache-maven/apache-maven-${MAVEN_VERSION}/bin:/opt/buildtools/bisheng-jdk-${BISHENG_JDK_VERSION%%-*}/bin:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/bin:$PATH
 ENV CLASSPATH=/opt/buildtools/bisheng-jdk-${BISHENG_JDK_VERSION%%-*}/lib
+
+# ==================== 编译环境变量固化 ====================
+# 这些环境变量在运行时可被覆盖，但镜像中已预设基础值
+ENV LD_LIBRARY_PATH=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:$LD_LIBRARY_PATH
+ENV LIBRARY_PATH=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:$LIBRARY_PATH
+ENV C_INCLUDE_PATH=/usr/local/include/orc:/opt/buildtools/LLVM-${LLVM_VERSION}/include:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/include:/opt/Gluten/include:$C_INCLUDE_PATH
+ENV CPLUS_INCLUDE_PATH=/usr/local/include/orc:/opt/buildtools/LLVM-${LLVM_VERSION}/include:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/include:/opt/Gluten/include:$CPLUS_INCLUDE_PATH

@@ -1,0 +1,83 @@
+name: Build Stage 2 Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage1_image:
+        description: 'Stage 1 基础镜像 (例如: ghcr.io/xxx/openeuler-build:26330_01)'
+        required: true
+        default: 'ghcr.io/computing-ttfhw/openeuler-build:26330_01'
+        type: string
+      push_image:
+        description: '推送镜像到仓库'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-stage2:
+    name: Build Stage 2 → 26330_02
+    runs-on: ubuntu-22.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image name (lowercase)
+        id: image_info
+        run: |
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: inputs.push_image == true
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Stage 1 base image
+        run: |
+          echo "拉取 Stage 1 基础镜像: ${STAGE1_IMAGE}"
+          docker pull "${STAGE1_IMAGE}"
+        env:
+          STAGE1_IMAGE: ${{ inputs.stage1_image }}
+
+      - name: Build and push Stage 2
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .ci/docker
+          file: .ci/docker/openeuler_2203_sp3_02.Dockerfile
+          push: ${{ inputs.push_image }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_02
+          cache-from: type=gha,scope=stage2
+          cache-to: type=gha,mode=max,scope=stage2
+          build-args: |
+            BASE_IMAGE=${{ inputs.stage1_image }}
+          provenance: false
+          sbom: false
+
+      - name: Show build result
+        run: |
+          echo "## Stage 2 构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 参数 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 基础镜像 | \`${{ inputs.stage1_image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 输出镜像 | \`${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_02\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 推送状态 | ${{ inputs.push_image && '✅ 已推送' || '⏭️ 未推送' }} |" >> $GITHUB_STEP_SUMMARY

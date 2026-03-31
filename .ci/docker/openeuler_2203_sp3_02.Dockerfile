@@ -3,10 +3,12 @@
 # 输出镜像: ghcr.io/{owner}/openeuler-build:26330_02
 # 基础镜像: ghcr.io/{owner}/openeuler-build:26330_01 (Stage 1)
 # 包含:
-#   - 应用依赖库: Arrow, ORC, Hadoop, jemalloc, zstd, lz4, snappy 等
+#   - 基础压缩库: jemalloc, zstd, lz4, snappy, zlib, zlib-ng, cyrus-sasl
+#   - JSON 库: nlohmann-json, jsoncpp
 #   - 测试工具: googletest
 #   - OmniStream 依赖: xxHash, rocksdb
 #   - Gluten 依赖: abseil-cpp, re2
+#   - 预装依赖: libboundscheck, Native Reader JAR, Arrow 15.0.0 Maven JAR
 #   - Jenkins Agent 配置
 # ============================================================
 
@@ -20,9 +22,7 @@ LABEL stage="2"
 LABEL tag="26330_02"
 
 # ==================== 版本参数 ====================
-# 应用依赖
-ARG ARROW_VERSION=apache-arrow-11.0.0
-ARG JSON_VERSION=v3.11.3
+# 基础压缩库
 ARG JEMALLOC_VERSION=5.3.0
 ARG ZLIB_VERSION=v1.3.1
 ARG LZ4_VERSION=v1.10.0
@@ -30,14 +30,27 @@ ARG SNAPPY_VERSION=1.1.10
 ARG ZSTD_VERSION=v1.5.6
 ARG CYRUS_SASL_VERSION=cyrus-sasl-2.1.28
 ARG ZLIB_NG_VERSION=2.0.4
+
+# JSON 库
+ARG JSON_VERSION=v3.11.3
 ARG JSONCPP_VERSION=1.9.6
-ARG ORC_VERSION=v1.7.4_new
-ARG HADOOP_VERSION=rel/release-3.2.0
+
+# 测试和 OmniStream 依赖
 ARG GTEST_VERSION=v1.14.0
 ARG XXHASH_VERSION=v0.8.2
 ARG ROCKSDB_VERSION=v8.11.4
+
+# Gluten 依赖
 ARG ABSEIL_VERSION=20250127.0
 ARG RE2_VERSION=2024-07-02
+
+# 预装依赖
+ARG LIBBOUNDSCHECK_VERSION=v1.1.16
+ARG OMNI_OPERATOR_VERSION=2.1.0
+ARG ARROW_VERSION=15.0.0
+
+# OBS 下载地址
+ARG OBS_BASE_URL=https://boostkit-bigdata-public.obs.cn-north-4.myhuaweicloud.com/artifact
 
 # Jenkins Agent
 ARG JENKINS_VERSION=3107.v665000b_51092
@@ -161,98 +174,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf jsoncpp
 
-# ==================== 第七层：安装 Arrow ====================
-RUN set -ex && \
-    cd /tmp \
-    && git clone https://gitee.com/kunpengcompute/boostkit-bigdata.git -b main \
-    && git clone https://gitee.com/mirrors/Apache-Arrow.git arrow \
-    && cd arrow && git checkout tags/${ARROW_VERSION} && cd .. \
-    && cp boostkit-bigdata/omnioperator/contrib/arrow-maint-11_0_0/arrow-maint-11_0_0.patch ./arrow/ \
-    && cd arrow && git apply arrow-maint-11_0_0.patch && cd .. \
-    && mkdir -p arrow/cpp/_build \
-    && cd arrow/cpp/_build \
-    && cmake \
-        -DARROW_JEMALLOC_LG_PAGE=16 \
-        -DARROW_BUILD_INTEGRATION=OFF \
-        -DARROW_BUILD_STATIC=OFF \
-        -DARROW_BUILD_TESTS=OFF \
-        -DARROW_ENABLE_TIMING_TESTS=OFF \
-        -DARROW_COMPUTE=ON \
-        -DARROW_DATASET=ON \
-        -DARROW_EXTRA_ERROR_CONTEXT=ON \
-        -DARROW_MIMALLOC=ON \
-        -DARROW_SUBSTRAIT=ON \
-        -DARROW_WITH_BROTLI=ON \
-        -DARROW_WITH_BZ2=ON \
-        -DARROW_WITH_LZ4=ON \
-        -DARROW_WITH_SNAPPY=ON \
-        -DARROW_WITH_UTF8POC=ON \
-        -DARROW_WITH_ZLIB=ON \
-        -DARROW_WITH_ZSTD=ON \
-        -DARROW_HDFS=ON \
-        -DCMAKE_BUILD_TYPE=Release \
-        -S .. -B . \
-    && make -j$(nproc) \
-    && make install \
-    && cd /tmp && rm -rf arrow boostkit-bigdata
-
-# ==================== 第八层：安装 ORC ====================
-RUN set -ex && \
-    export ZSTD_HOME=/usr/local \
-    && export LZ4_HOME=/usr/local \
-    && export ZLIB_HOME=/usr/local \
-    && export ZLIB_NG_HOME=/usr/local \
-    && export SNAPPY_HOME=/usr/local \
-    && mkdir -p /opt/Adaptor/lib/include/ \
-    && cd /tmp \
-    && git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/b40eab964ee243e1a43336403eba828f/OpenSourceCenter/Adaptor/orc.git -b ${ORC_VERSION} \
-    && cd orc \
-    && mkdir build \
-    && cd build \
-    && cmake ../ \
-        -DBUILD_JAVA=OFF \
-        -DANALYZE_JAVA=OFF \
-        -DBUILD_LIBHDFSPP=OFF \
-        -DBUILD_CPP_TESTS=OFF \
-        -DBUILD_TOOLS=ON \
-        -DBUILD_POSITION_INDEPENDENT_LIB=ON \
-    && make -j$(nproc) \
-    && make install \
-    && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib:/opt/buildtools/Protobuf-3.21.9/lib:/usr/local/lib \
-    && gcc -shared -fPIC -o liborc.so \
-        -Wl,--whole-archive /usr/local/lib/liborc.a \
-        -Wl,--no-whole-archive \
-        -L/opt/buildtools/Protobuf-3.21.9/lib \
-        -L/usr/local/lib \
-        -L/usr/local/lib64 \
-        -lsasl2 -lssl -lcrypto -lpthread -lprotobuf -lsnappy -lzstd -lz-ng -llz4 \
-    && ldd -r liborc.so \
-    && cp liborc.so /usr/local/lib/ \
-    && cd .. \
-    && cp -rf /usr/local/include/orc/* /opt/Adaptor/lib/include/ \
-    && cd /tmp && rm -rf orc
-
-# ==================== 第九层：安装 Hadoop ====================
-RUN set -ex && \
-    cd /tmp \
-    && git clone https://gitee.com/mirrors/hadoop.git \
-    && cd hadoop && git checkout tags/${HADOOP_VERSION} && cd .. \
-    && git clone https://gitee.com/kunpengcompute/boostkit-bigdata.git -b main \
-    && cp boostkit-bigdata/omnioperator/contrib/hadoop-3_2_0/hadoop-3_2_0.patch hadoop \
-    && cd hadoop && git apply hadoop-3_2_0.patch && cd .. \
-    && cd hadoop/hadoop-hdfs-project/hadoop-hdfs-native-client/ \
-    && sed -i "172d" src/CMakeLists.txt \
-    && sed -i "155d" src/CMakeLists.txt \
-    && mvn clean package -DskipTests -Pdist,native -Dtar \
-    && cd /tmp \
-    && mkdir -p /opt/Adaptor \
-    && export OMNI_HOME=/opt/Adaptor/ \
-    && cp -rf hadoop/hadoop-hdfs-project/hadoop-hdfs-native-client/src/main/native/libhdfs/include/* $OMNI_HOME/lib/include/ \
-    && cp -rf hadoop/hadoop-hdfs-project/hadoop-hdfs-native-client/target/target/usr/local/lib/* $OMNI_HOME/lib \
-    && cp -rf hadoop/hadoop-hdfs-project/hadoop-hdfs-native-client/target/hadoop-hdfs-native-client-3.2.0/include/* $OMNI_HOME/lib/include/ \
-    && rm -rf hadoop boostkit-bigdata
-
-# ==================== 第十层：安装测试工具 ====================
+# ==================== 第七层：安装测试工具 ====================
 # googletest
 RUN set -ex && \
     cd /tmp \
@@ -263,7 +185,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf googletest
 
-# ==================== 第十一层：安装 OmniStream 依赖 ====================
+# ==================== 第八层：安装 OmniStream 依赖 ====================
 # xxHash
 RUN set -ex && \
     cd /tmp \
@@ -292,7 +214,7 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf rocksdb
 
-# ==================== 第十二层：安装 Gluten 依赖 ====================
+# ==================== 第九层：安装 Gluten 依赖 ====================
 # abseil-cpp
 RUN set -ex && \
     mkdir -p /opt/Gluten \
@@ -323,6 +245,34 @@ RUN set -ex && \
     && make install \
     && cd /tmp && rm -rf re2
 
+# ==================== 第十层：安装 libboundscheck ====================
+RUN set -ex && \
+    cd /tmp \
+    && git clone https://gitcode.com/openeuler/libboundscheck.git \
+    && cd libboundscheck && git checkout tags/${LIBBOUNDSCHECK_VERSION} \
+    && make CC=gcc \
+    && cp lib/*.so /usr/local/lib/ \
+    && cp -r include /usr/local/libboundscheck-include \
+    && cd /tmp && rm -rf libboundscheck
+
+# ==================== 第十一层：预装 Native Reader JAR ====================
+# master 分支版本
+RUN set -ex && \
+    mkdir -p /root/.m2/repository/com/huawei/boostkit/boostkit-omniop-native-reader/3.4.3-${OMNI_OPERATOR_VERSION} \
+    && wget -O /tmp/native-reader.jar \
+        "${OBS_BASE_URL}/omniop_native_reader/br_feature_omnioperator_spark_2026_330/Daily.26.0.0.B001/boostkit-omniop-native-reader-3.4.3-${OMNI_OPERATOR_VERSION}.jar" \
+    && cp /tmp/native-reader.jar \
+        /root/.m2/repository/com/huawei/boostkit/boostkit-omniop-native-reader/3.4.3-${OMNI_OPERATOR_VERSION}/ \
+    && rm -rf /tmp/*.jar
+
+# ==================== 第十二层：预装 Arrow 15.0.0 Maven JAR ====================
+RUN set -ex && \
+    mkdir -p /root/.m2/repository/org/apache \
+    && cd /root/.m2/repository/org/apache \
+    && wget "${OBS_BASE_URL}/Gluten/Compile_Rely/arrow-${ARROW_VERSION}.zip" \
+    && unzip -o arrow-${ARROW_VERSION}.zip \
+    && rm -rf arrow-${ARROW_VERSION}.zip
+
 # ==================== 第十三层：安装 Jenkins Agent ====================
 RUN set -ex && \
     # 下载 Jenkins remoting jar
@@ -349,21 +299,15 @@ RUN set -ex && \
 # ==================== 第十四层：收集依赖产物 ====================
 RUN set -ex && \
     os_version=$(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | sed -E 's/"([A-Za-z0-9]+) ([0-9]+\.[0-9]+).*/\1\2/') \
-    # Adaptor Dependencies
+    # Adaptor Dependencies - 移除 Arrow/ORC/Hadoop 相关库
     && mkdir -p /opt/Dependencies_${os_version}_Adaptor \
     && cd /opt/Dependencies_${os_version}_Adaptor \
     && cp /opt/buildtools/LLVM-15.0.4/lib/libLLVM-15.so ./ \
     && cp /usr/local/lib/libjemalloc.so.2 ./ \
-    && cp /usr/local/lib64/libarrow_dataset.so.1100.0.0 ./libarrow_dataset.so.1100 \
-    && cp /usr/local/lib64/libarrow.so.1100.0.0 ./libarrow.so.1100 \
-    && cp /usr/local/lib64/libarrow_substrait.so.1100.0.0 ./libarrow_substrait.so.1100 \
-    && cp /usr/local/lib64/libparquet.so.1100.0.0 ./libparquet.so.1100 \
     && cp /usr/local/lib64/libsnappy.so.1.1.10 ./libsnappy.so.1 \
     && cp /usr/local/lib/liblz4.so.1.10.0 ./liblz4.so.1 \
     && cp /opt/buildtools/Protobuf-3.21.9/lib/libprotobuf.so.32.0.9 ./libprotobuf.so.32 \
     && cp /usr/local/lib/libz.so.1.3.1 ./libz.so.1 \
-    && cp /usr/local/lib/liborc.so ./ \
-    && cp /opt/Adaptor/lib/libhdfs.so.0.0.0 ./ \
     && cp /usr/local/lib/libzstd.so.1.5.6 ./libzstd.so.1 \
     # Gluten Dependencies
     && cd /opt \
@@ -385,6 +329,11 @@ RUN set -ex && \
 
 # ==================== 环境变量 ====================
 ENV AGENT_WORKDIR=${AGENT_WORKDIR}
+ENV LIBBOUNDSCHECK_HOME=/usr/local
+
+# 添加 libboundscheck 到包含路径
+ENV C_INCLUDE_PATH=/usr/local/libboundscheck-include:${C_INCLUDE_PATH}
+ENV CPLUS_INCLUDE_PATH=/usr/local/libboundscheck-include:${CPLUS_INCLUDE_PATH}
 
 # ==================== 切换用户 ====================
 USER ${user}
