@@ -1,0 +1,141 @@
+# ============================================================
+# Docker 镜像构建 - Stage 2: 依赖镜像
+# ============================================================
+# 输出镜像: ghcr.io/{owner}/gluten-build:deps-{version}
+# 基础镜像: ghcr.io/{owner}/gluten-build:toolchain-latest
+#
+# 包含依赖:
+#   - 压缩库: jemalloc 5.3.0, zstd 1.5.6, lz4 1.10.0, snappy 1.1.10
+#   - JSON 库: nlohmann-json 3.11.3, jsoncpp 1.9.6
+#   - 测试工具: googletest 1.14.0
+#   - OmniStream: xxHash 0.8.2, rocksdb 8.11.4
+#   - Gluten: abseil-cpp 20250127.0, re2 2024-07-02
+#   - 预装: libboundscheck 1.1.16, Native Reader, Arrow 15.0.0
+#   - Jenkins Agent
+# ============================================================
+
+name: Build Dependencies Image (Stage 2)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.ci/docker/openeuler_2203_sp3_02.Dockerfile'
+      - '.ci/docker/openEuler.repo'
+      - '.github/workflows/docker-build-stage2.yml'
+  workflow_dispatch:
+    inputs:
+      toolchain_image:
+        description: '工具链基础镜像（留空使用 latest）'
+        required: false
+        default: ''
+        type: string
+      push_image:
+        description: '推送镜像到仓库'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ==================== 计算版本标签 ====================
+  prepare:
+    name: Prepare Version
+    runs-on: ubuntu-latest
+    outputs:
+      build_date: ${{ steps.version.outputs.build_date }}
+      image_tag: ${{ steps.version.outputs.image_tag }}
+      image_name: ${{ steps.version.outputs.image_name }}
+      toolchain_image: ${{ steps.version.outputs.toolchain_image }}
+
+    steps:
+      - name: Generate version tags
+        id: version
+        run: |
+          BUILD_DATE=$(date +%Y%m%d)
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${OWNER_LOWER}/gluten-build"
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+
+          # 依赖镜像版本标签
+          IMAGE_TAG="deps-arrow15.0.0-rocksdb8.11-re2.11-v${BUILD_DATE}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          # 确定基础镜像
+          if [ -n "${{ inputs.toolchain_image }}" ]; then
+            TOOLCHAIN="${{ inputs.toolchain_image }}"
+          else
+            TOOLCHAIN="${{ env.REGISTRY }}/${IMAGE_NAME}:toolchain-latest"
+          fi
+          echo "toolchain_image=${TOOLCHAIN}" >> $GITHUB_OUTPUT
+
+          echo "📦 镜像标签: ${IMAGE_TAG}"
+          echo "📌 基础镜像: ${TOOLCHAIN}"
+
+  # ==================== 构建依赖镜像 ====================
+  build:
+    name: Build Dependencies Image
+    runs-on: ubuntu-22.04-arm
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name == 'push' || inputs.push_image == true
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull toolchain image
+        run: |
+          echo "拉取工具链镜像: ${{ needs.prepare.outputs.toolchain_image }}"
+          docker pull "${{ needs.prepare.outputs.toolchain_image }}"
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .ci/docker
+          file: .ci/docker/openeuler_2203_sp3_02.Dockerfile
+          push: ${{ github.event_name == 'push' || inputs.push_image == true }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:deps-latest
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:latest
+          cache-from: type=gha,scope=deps
+          cache-to: type=gha,mode=max,scope=deps
+          build-args: |
+            BASE_IMAGE=${{ needs.prepare.outputs.toolchain_image }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+            IMAGE_VERSION=${{ needs.prepare.outputs.image_tag }}
+          provenance: false
+          sbom: false
+
+      - name: Show build result
+        run: |
+          echo "## 📦 依赖镜像构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 项目 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 基础镜像 | \`${{ needs.prepare.outputs.toolchain_image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 版本标签 | \`${{ needs.prepare.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 镜像地址 | \`${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest | \`${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**包含依赖:** jemalloc, zstd, lz4, snappy, rocksdb, re2, abseil-cpp, Arrow 15.0.0, libboundscheck" >> $GITHUB_STEP_SUMMARY
