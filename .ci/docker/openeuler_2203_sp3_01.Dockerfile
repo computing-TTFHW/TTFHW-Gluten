@@ -1,21 +1,48 @@
 # ============================================================
-# openEuler 22.03 SP3 构建基础镜像 (Stage 1)
-# 输出镜像: ghcr.io/{owner}/openeuler-build:26330_01
-# 包含:
-#   - 编译工具链: JDK8, JDK21, Maven, CMake, LLVM-15, Protobuf
-#   - 基础库: fmt, folly
-#   - 开发工具: Lcov, Python包
-#   - 系统依赖: 所有构建所需的系统包
+# openEuler 22.03 SP3 构建工具链镜像 (Stage 1)
+# ============================================================
+# 输出镜像: ghcr.io/{owner}/gluten-build:toolchain-{version}
+#
+# 包含工具链:
+#   - JDK: 8u462, 17, 21.0.9 (BiSheng)
+#   - Maven: 3.9.9
+#   - CMake: 3.28.2
+#   - LLVM: 15.0.4
+#   - Protobuf: 3.21.9
+#   - Lcov: 1.16
+#   - fmt: 10.1.1
+#   - folly: 2024.07.01.00
 # ============================================================
 
 # 基础镜像使用华为云 SWR 的 openEuler 官方镜像
 ARG BASE_IMAGE=swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:latest
 FROM ${BASE_IMAGE}
 
+# ==================== OCI 标准标签 ====================
+ARG BUILD_DATE
+ARG IMAGE_VERSION
+LABEL org.opencontainers.image.title="Gluten Build Toolchain"
+LABEL org.opencontainers.image.description="openEuler 22.03 SP3 build image with toolchain for Gluten compilation"
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.source="https://github.com/computing-TTFHW/TTFHW-Gluten"
+LABEL org.opencontainers.image.vendor="Kunpeng Team"
+LABEL org.opencontainers.image.base.name="swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:latest"
+
+# ==================== 工具版本标签 ====================
+LABEL com.kunpeng.jdk8.version="8u462-b08"
+LABEL com.kunpeng.jdk17.version="17"
+LABEL com.kunpeng.jdk21.version="21.0.9-b11"
+LABEL com.kunpeng.maven.version="3.9.9"
+LABEL com.kunpeng.cmake.version="3.28.2"
+LABEL com.kunpeng.llvm.version="15.0.4"
+LABEL com.kunpeng.protobuf.version="3.21.9"
+LABEL com.kunpeng.lcov.version="1.16"
+LABEL com.kunpeng.fmt.version="10.1.1"
+LABEL com.kunpeng.folly.version="2024.07.01.00"
+
 LABEL maintainer="kunpeng-team"
-LABEL description="openEuler 22.03 SP3 build base image with toolchain and libraries"
-LABEL stage="1"
-LABEL tag="26330_01"
+LABEL stage="toolchain"
 
 # ==================== 版本参数 ====================
 # JDK
@@ -50,7 +77,6 @@ RUN set -ex && \
     && yum makecache
 
 # ==================== 第二层：安装系统依赖包 ====================
-# 合并所有阶段需要的系统包，一次性安装
 RUN set -ex && \
     yum install -y \
         # 基础工具
@@ -97,27 +123,23 @@ RUN set -ex && \
     -i http://mirrors.aliyun.com/pypi/simple/ \
     --trusted-host mirrors.aliyun.com
 
-# ==================== 第四层：安装 JDK8 ====================
+# ==================== 第四层：安装 JDK (8/17/21 合并) ====================
 RUN set -ex && \
+    # JDK 8
     mkdir -p /opt/buildtools/openjdk8 \
     && cd /opt/buildtools/openjdk8 \
-    && wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/OpenJDK8U-jdk_aarch64_linux_hotspot_8u${JDK8_VERSION}${JDK8_BUILD}.tar.gz \
+    && wget -q https://buildtools.obs.cn-north-4.myhuaweicloud.com/OpenJDK8U-jdk_aarch64_linux_hotspot_8u${JDK8_VERSION}${JDK8_BUILD}.tar.gz \
     && tar -xf OpenJDK8U-jdk_aarch64_linux_hotspot_8u${JDK8_VERSION}${JDK8_BUILD}.tar.gz \
-    && rm -rf OpenJDK8U-jdk_aarch64_linux_hotspot_8u${JDK8_VERSION}${JDK8_BUILD}.tar.gz
-
-# ==================== 第五层：安装 BiSheng JDK 21 ====================
-RUN set -ex && \
-    mkdir -p /opt/buildtools \
+    && rm -rf OpenJDK8U-jdk_aarch64_linux_hotspot_8u${JDK8_VERSION}${JDK8_BUILD}.tar.gz \
+    # JDK 21 (BiSheng)
     && cd /opt/buildtools \
-    && wget https://mirrors.huaweicloud.com/kunpeng/archive/compiler/bisheng_jdk/bisheng-jdk-${BISHENG_JDK_VERSION}-linux-aarch64.tar.gz \
+    && wget -q https://mirrors.huaweicloud.com/kunpeng/archive/compiler/bisheng_jdk/bisheng-jdk-${BISHENG_JDK_VERSION}-linux-aarch64.tar.gz \
     && tar -xf bisheng-jdk-${BISHENG_JDK_VERSION}-linux-aarch64.tar.gz \
     && rm -rf bisheng-jdk-${BISHENG_JDK_VERSION}-linux-aarch64.tar.gz \
     && sed -i '/JAVA_HOME/d' /etc/profile \
-    && sed -i '/JRE_HOME/d' /etc/profile
-
-# ==================== 第六层：安装 JDK17 (Jenkins Agent 需要) ====================
-RUN set -ex && \
-    wget -q https://mirrors.huaweicloud.com/openjdk/${JDK17_VERSION}/openjdk-${JDK17_VERSION}_linux-aarch64_bin.tar.gz -O /tmp/jdk17.tar.gz \
+    && sed -i '/JRE_HOME/d' /etc/profile \
+    # JDK 17
+    && wget -q https://mirrors.huaweicloud.com/openjdk/${JDK17_VERSION}/openjdk-${JDK17_VERSION}_linux-aarch64_bin.tar.gz -O /tmp/jdk17.tar.gz \
     && mkdir -p /usr/local \
     && tar -xzf /tmp/jdk17.tar.gz -C /usr/local \
     && rm /tmp/jdk17.tar.gz \
@@ -125,33 +147,33 @@ RUN set -ex && \
     && chmod a+rx /usr/local/openjdk-${JDK17_VERSION} \
     && ln -sf /usr/local/openjdk-${JDK17_VERSION}/bin/java /usr/local/bin/java
 
-# ==================== 第七层：安装 CMake ====================
+# ==================== 第五层：安装 CMake ====================
 RUN set -ex && \
     mkdir -p /opt/buildtools \
     && cd /opt/buildtools \
-    && wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz \
+    && wget -q https://buildtools.obs.cn-north-4.myhuaweicloud.com/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz \
     && tar -xf cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz \
     && rm -rf cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz \
     && rm -rf /usr/local/bin/cmake \
     && ln -sf cmake-${CMAKE_VERSION}-linux-aarch64/bin/cmake /usr/local/bin/cmake \
     && ln -sf cmake-${CMAKE_VERSION}-linux-aarch64/share/cmake-${CMAKE_VERSION%%.*}.28 /usr/local/share/
 
-# ==================== 第八层：安装 Apache Maven ====================
+# ==================== 第六层：安装 Apache Maven ====================
 RUN set -ex && \
     mkdir -p /opt/buildtools/apache-maven \
     && cd /opt/buildtools/apache-maven \
-    && wget https://repo1.maven.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.zip \
-    && unzip apache-maven-${MAVEN_VERSION}-bin.zip \
+    && wget -q https://repo1.maven.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.zip \
+    && unzip -q apache-maven-${MAVEN_VERSION}-bin.zip \
     && rm -rf apache-maven-${MAVEN_VERSION}-bin.zip \
     && sed -i '/MAVEN_HOME/d' /etc/profile
 
-# ==================== 第九层：安装 Protobuf ====================
+# ==================== 第七层：安装 Protobuf ====================
 RUN set -ex && \
     mkdir -p /opt/buildtools/Protobuf-${PROTOBUF_VERSION} \
     && cd /tmp \
-    && git clone https://codehub.devcloud.cn-north-4.huaweicloud.com/b40eab964ee243e1a43336403eba828f/OpenSourceCenter/Gluten/protobuf.git \
+    && git clone -q https://codehub.devcloud.cn-north-4.huaweicloud.com/b40eab964ee243e1a43336403eba828f/OpenSourceCenter/Gluten/protobuf.git \
     && cd protobuf \
-    && git checkout v${PROTOBUF_VERSION} \
+    && git checkout -q v${PROTOBUF_VERSION} \
     && ./autogen.sh \
     && ./configure --enable-static=no --prefix=/opt/buildtools/Protobuf-${PROTOBUF_VERSION} \
     && make -j$(nproc) \
@@ -160,10 +182,10 @@ RUN set -ex && \
     && cd /tmp \
     && rm -rf protobuf
 
-# ==================== 第十层：安装 Lcov ====================
+# ==================== 第八层：安装 Lcov ====================
 RUN set -ex && \
     cd /opt/buildtools \
-    && wget https://github.com/linux-test-project/lcov/releases/download/v${LCOV_VERSION}/lcov-${LCOV_VERSION}.tar.gz \
+    && wget -q https://github.com/linux-test-project/lcov/releases/download/v${LCOV_VERSION}/lcov-${LCOV_VERSION}.tar.gz \
     && tar -xf lcov-${LCOV_VERSION}.tar.gz \
     && rm -rf lcov-${LCOV_VERSION}.tar.gz \
     && cd lcov-${LCOV_VERSION} \
@@ -172,12 +194,12 @@ RUN set -ex && \
     && cd /opt/buildtools \
     && rm -rf lcov-${LCOV_VERSION}
 
-# ==================== 第十一层：安装 LLVM ====================
+# ==================== 第九层：安装 LLVM ====================
 RUN set -ex && \
     mkdir -p /opt/buildtools/LLVM-${LLVM_VERSION} \
     && export LLVM_install_dir=/opt/buildtools/LLVM-${LLVM_VERSION} \
     && cd /tmp \
-    && wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/llvm-project-llvmorg-${LLVM_VERSION}.tar.gz \
+    && wget -q https://buildtools.obs.cn-north-4.myhuaweicloud.com/llvm-project-llvmorg-${LLVM_VERSION}.tar.gz \
     && tar -zxf llvm-project-llvmorg-${LLVM_VERSION}.tar.gz \
     && rm -rf llvm-project-llvmorg-${LLVM_VERSION}.tar.gz \
     && mkdir -p llvm-project-llvmorg-${LLVM_VERSION}/build \
@@ -196,14 +218,14 @@ RUN set -ex && \
     && cd /tmp \
     && rm -rf llvm-project-llvmorg-${LLVM_VERSION}
 
-# ==================== 第十二层：安装 fmt 库 ====================
+# ==================== 第十层：安装基础库 (fmt + folly 合并) ====================
 RUN set -ex && \
+    # fmt
     cd /tmp \
-    && git clone https://gitee.com/mirrors/fmt.git \
+    && git clone -q https://gitee.com/mirrors/fmt.git \
     && cd fmt \
-    && git checkout tags/${FMT_VERSION} \
-    && mkdir -p build \
-    && cd build \
+    && git checkout -q tags/${FMT_VERSION} \
+    && mkdir -p build && cd build \
     && cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DFMT_TEST=OFF \
@@ -212,17 +234,12 @@ RUN set -ex && \
         -DBUILD_SHARED_LIBS=ON \
     && make -j$(nproc) \
     && make install \
-    && cd /tmp \
-    && rm -rf fmt
-
-# ==================== 第十三层：安装 folly 库 ====================
-RUN set -ex && \
-    cd /tmp \
-    && git clone https://gitee.com/mirrors/folly.git \
+    && cd /tmp && rm -rf fmt \
+    # folly
+    && git clone -q https://gitee.com/mirrors/folly.git \
     && cd folly \
-    && git checkout tags/${FOLLY_VERSION} \
-    && mkdir -p build \
-    && cd build \
+    && git checkout -q tags/${FOLLY_VERSION} \
+    && mkdir -p build && cd build \
     && cmake .. \
         -DFOLLY_HAVE_INT128_T=ON \
         -DBUILD_SHARED_LIBS=OFF \
@@ -230,8 +247,7 @@ RUN set -ex && \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     && make -j$(nproc) \
     && make install \
-    && cd /tmp \
-    && rm -rf folly
+    && cd /tmp && rm -rf folly
 
 # ==================== 持久化环境变量 ====================
 # 默认使用 JDK21
@@ -245,9 +261,8 @@ ENV PROTOBUF_HOME=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}
 ENV PATH=/opt/buildtools/cmake-${CMAKE_VERSION}-linux-aarch64/bin:/opt/buildtools/LLVM-${LLVM_VERSION}/bin:/opt/buildtools/apache-maven/apache-maven-${MAVEN_VERSION}/bin:/opt/buildtools/bisheng-jdk-${BISHENG_JDK_VERSION%%-*}/bin:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/bin:$PATH
 ENV CLASSPATH=/opt/buildtools/bisheng-jdk-${BISHENG_JDK_VERSION%%-*}/lib
 
-# ==================== 编译环境变量固化 ====================
-# 这些环境变量在运行时可被覆盖，但镜像中已预设基础值
+# 编译环境变量固化
 ENV LD_LIBRARY_PATH=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:$LD_LIBRARY_PATH
 ENV LIBRARY_PATH=/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:$LIBRARY_PATH
-ENV C_INCLUDE_PATH=/usr/local/include/orc:/opt/buildtools/LLVM-${LLVM_VERSION}/include:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/include:/opt/Gluten/include:$C_INCLUDE_PATH
-ENV CPLUS_INCLUDE_PATH=/usr/local/include/orc:/opt/buildtools/LLVM-${LLVM_VERSION}/include:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/include:/opt/Gluten/include:$CPLUS_INCLUDE_PATH
+ENV C_INCLUDE_PATH=/opt/buildtools/LLVM-${LLVM_VERSION}/include:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/include:/opt/Gluten/include:$C_INCLUDE_PATH
+ENV CPLUS_INCLUDE_PATH=/opt/buildtools/LLVM-${LLVM_VERSION}/include:/opt/buildtools/Protobuf-${PROTOBUF_VERSION}/include:/opt/Gluten/include:$CPLUS_INCLUDE_PATH

@@ -54,14 +54,15 @@ jobs:
       uses: actions/cache@v4
       with:
         path: docker-image-cache
-        key: ${{ runner.os }}-arm-docker-openeuler-build-26330_02
+        key: ${{ runner.os }}-arm-docker-gluten-build-deps
         restore-keys: |
+          ${{ runner.os }}-arm-docker-gluten-build-
           ${{ runner.os }}-arm-docker-
 
     - name: Load or pull Docker image
       run: |
-        IMAGE="ghcr.io/computing-ttfhw/openeuler-build:26330_02"
-        CACHE_FILE="${{ github.workspace }}/docker-image-cache/openeuler.tar"
+        IMAGE="ghcr.io/computing-ttfhw/gluten-build:deps-latest"
+        CACHE_FILE="${{ github.workspace }}/docker-image-cache/gluten-build.tar"
 
         if [[ -f "$CACHE_FILE" ]]; then
             echo "从缓存加载Docker镜像..."
@@ -96,7 +97,7 @@ jobs:
             --entrypoint /bin/sh \
             -v "${{ github.workspace }}/maven-docker-cache:/root/.m2" \
             --workdir "/opt" \
-            ghcr.io/computing-ttfhw/openeuler-build:26330_02 \
+            ghcr.io/computing-ttfhw/gluten-build:deps-latest \
             -c "tail -f /dev/null"
 
         if docker ps --filter "name=^/gluten-project-builder$" --format "{{.Names}}" | grep -q "^gluten-project-builder$"; then

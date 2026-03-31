@@ -1,4 +1,16 @@
-name: Build Docker Images (Layered)
+# ============================================================
+# Docker 镜像构建 Workflow
+# ============================================================
+# 镜像命名策略:
+#   Stage 1 (工具链): gluten-build:toolchain-jdk{jdk}-maven{maven}-llvm{llvm}-v{date}
+#   Stage 2 (依赖):   gluten-build:deps-arrow{arrow}-rocksdb{rocksdb}-v{date}
+#
+# 触发方式:
+#   - push 到 main 分支（.ci/docker/** 变更）
+#   - 手动触发（可选择性构建 stage）
+# ============================================================
+
+name: Build Docker Images
 
 on:
   push:
@@ -10,39 +22,69 @@ on:
   workflow_dispatch:
     inputs:
       build_stage:
-        description: '构建阶段 (all, stage-1, stage-2)'
+        description: '构建阶段'
         required: true
         default: 'all'
         type: choice
         options:
           - all
-          - stage-1
-          - stage-2
+          - toolchain
+          - deps
       push_images:
         description: '推送镜像到仓库'
         required: true
         default: true
         type: boolean
-      skip_stage2:
-        description: '跳过 Stage 2 构建（仅构建 Stage 1）'
-        required: false
-        default: false
-        type: boolean
 
 env:
   REGISTRY: ghcr.io
-  # 华为云 SWR 基础镜像
+  # 基础镜像
   SWR_BASE_IMAGE: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:latest
 
 jobs:
-  # ==================== Stage 1: 构建基础镜像 (tag: 26330_01) ====================
-  stage-1:
-    name: Build Stage 1 → 26330_01
-    runs-on: ubuntu-22.04-arm
-    # 当 build_stage 为 all、stage-1，或 push 触发时运行
-    if: inputs.build_stage == 'all' || inputs.build_stage == 'stage-1' || github.event_name == 'push' || inputs.skip_stage2 == true
+  # ==================== 准备阶段：计算版本标签 ====================
+  prepare:
+    name: Prepare Version Tags
+    runs-on: ubuntu-latest
     outputs:
-      image_full: ${{ steps.image_info.outputs.image_full }}
+      build_date: ${{ steps.version.outputs.build_date }}
+      toolchain_tag: ${{ steps.version.outputs.toolchain_tag }}
+      deps_tag: ${{ steps.version.outputs.deps_tag }}
+      image_name: ${{ steps.version.outputs.image_name }}
+
+    steps:
+      - name: Generate version tags
+        id: version
+        run: |
+          # 构建日期
+          BUILD_DATE=$(date +%Y%m%d)
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+
+          # 镜像名称（小写）
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${OWNER_LOWER}/gluten-build"
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+
+          # Stage 1 (工具链) 版本标签
+          # 格式: toolchain-jdk21.0.9-maven3.9.9-llvm15.0.4-v20260331
+          TOOLCHAIN_TAG="toolchain-jdk21.0.9-maven3.9.9-llvm15.0.4-v${BUILD_DATE}"
+          echo "toolchain_tag=${TOOLCHAIN_TAG}" >> $GITHUB_OUTPUT
+          echo "📦 Stage 1 标签: ${TOOLCHAIN_TAG}"
+
+          # Stage 2 (依赖) 版本标签
+          # 格式: deps-arrow15.0.0-rocksdb8.11-re2.11-v20260331
+          DEPS_TAG="deps-arrow15.0.0-rocksdb8.11-re2.11-v${BUILD_DATE}"
+          echo "deps_tag=${DEPS_TAG}" >> $GITHUB_OUTPUT
+          echo "📦 Stage 2 标签: ${DEPS_TAG}"
+
+  # ==================== Stage 1: 构建工具链镜像 ====================
+  toolchain:
+    name: Build Toolchain Image
+    runs-on: ubuntu-22.04-arm
+    needs: prepare
+    if: inputs.build_stage == 'all' || inputs.build_stage == 'toolchain' || github.event_name == 'push'
+    outputs:
+      image_full: ${{ steps.build.outputs.image_full }}
     permissions:
       contents: read
       packages: write
@@ -50,15 +92,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set image name (lowercase)
-        id: image_info
-        run: |
-          # Docker 镜像名称必须是小写
-          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_01" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -71,49 +104,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine push flag
-        id: push_flag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "should_push=true" >> $GITHUB_OUTPUT
-          elif [ "${{ inputs.push_images }}" = "true" ]; then
-            echo "should_push=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_push=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build and push Stage 1
+      - name: Build and push Toolchain image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: .ci/docker
           file: .ci/docker/openeuler_2203_sp3_01.Dockerfile
-          push: ${{ steps.push_flag.outputs.should_push == 'true' }}
+          push: ${{ github.event_name == 'push' || inputs.push_images == true }}
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_01
-            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:latest
-          cache-from: type=gha,scope=stage1
-          cache-to: type=gha,mode=max,scope=stage1
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.toolchain_tag }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:toolchain-latest
+          cache-from: type=gha,scope=toolchain
+          cache-to: type=gha,mode=max,scope=toolchain
           build-args: |
             BASE_IMAGE=${{ env.SWR_BASE_IMAGE }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+            IMAGE_VERSION=${{ needs.prepare.outputs.toolchain_tag }}
           provenance: false
           sbom: false
 
       - name: Show build result
         run: |
-          echo "### Stage 1 构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "- 镜像: \`${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_01\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 工具链镜像构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 项目 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 镜像 | \`${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.toolchain_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest | \`${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:toolchain-latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**包含工具:**" >> $GITHUB_STEP_SUMMARY
+          echo "- JDK 8u462, JDK 17, BiSheng JDK 21.0.9" >> $GITHUB_STEP_SUMMARY
+          echo "- Maven 3.9.9, CMake 3.28.2" >> $GITHUB_STEP_SUMMARY
+          echo "- LLVM 15.0.4, Protobuf 3.21.9" >> $GITHUB_STEP_SUMMARY
+          echo "- fmt 10.1.1, folly 2024.07.01.00" >> $GITHUB_STEP_SUMMARY
 
-  # ==================== Stage 2: 应用镜像 (tag: 26330_02) ====================
-  stage-2:
-    name: Build Stage 2 → 26330_02
+  # ==================== Stage 2: 构建依赖镜像 ====================
+  deps:
+    name: Build Dependencies Image
     runs-on: ubuntu-22.04-arm
-    needs: stage-1
-    # 当 skip_stage2 为 true 或 build_stage 为 stage-1 时跳过
-    if: inputs.skip_stage2 != true && inputs.build_stage != 'stage-1' && (needs.stage-1.result == 'success' || inputs.build_stage == 'stage-2')
+    needs: [prepare, toolchain]
+    if: |
+      (inputs.build_stage == 'all' || inputs.build_stage == 'deps') &&
+      (needs.toolchain.result == 'success' || inputs.build_stage == 'deps')
     outputs:
-      image_full: ${{ steps.image_info.outputs.image_full }}
+      image_full: ${{ steps.build.outputs.image_full }}
     permissions:
       contents: read
       packages: write
@@ -121,15 +156,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set image name (lowercase)
-        id: image_info
-        run: |
-          # Docker 镜像名称必须是小写
-          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_NAME="${OWNER_LOWER}/openeuler-build"
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "image_full=${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -142,126 +168,103 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine push flag
-        id: push_flag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "should_push=true" >> $GITHUB_OUTPUT
-          elif [ "${{ inputs.push_images }}" = "true" ]; then
-            echo "should_push=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_push=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Determine base image
         id: base
         run: |
-          # 单独构建 stage-2 时，使用已推送的 stage-1 镜像
-          if [ "${{ inputs.build_stage }}" = "stage-2" ]; then
-            BASE="${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_01"
-            echo "单独构建 Stage 2，使用已推送的 Stage 1 镜像: ${BASE}"
+          # 单独构建 deps 时，使用已推送的 toolchain 镜像
+          if [ "${{ inputs.build_stage }}" = "deps" ]; then
+            BASE="${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:toolchain-latest"
+            echo "📌 单独构建依赖镜像，使用最新工具链: ${BASE}"
           else
-            BASE="${{ needs.stage-1.outputs.image_full }}"
-            echo "正常构建，使用 Stage 1 输出: ${BASE}"
+            BASE="${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.toolchain_tag }}"
+            echo "📌 使用刚构建的工具链镜像: ${BASE}"
           fi
           echo "base_image=${BASE}" >> $GITHUB_OUTPUT
 
-      - name: Build and push Stage 2
+      - name: Build and push Dependencies image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: .ci/docker
           file: .ci/docker/openeuler_2203_sp3_02.Dockerfile
-          push: ${{ steps.push_flag.outputs.should_push == 'true' }}
+          push: ${{ github.event_name == 'push' || inputs.push_images == true }}
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_02
-          cache-from: type=gha,scope=stage2
-          cache-to: type=gha,mode=max,scope=stage2
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.deps_tag }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:deps-latest
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:latest
+          cache-from: type=gha,scope=deps
+          cache-to: type=gha,mode=max,scope=deps
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.base_image }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+            IMAGE_VERSION=${{ needs.prepare.outputs.deps_tag }}
           provenance: false
           sbom: false
 
       - name: Show build result
         run: |
-          echo "### Stage 2 构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "- 基础镜像: \`${{ steps.base.outputs.base_image }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 镜像: \`${{ env.REGISTRY }}/${{ steps.image_info.outputs.image_name }}:26330_02\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 依赖镜像构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 项目 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 基础镜像 | \`${{ steps.base.outputs.base_image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 镜像 | \`${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.deps_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest | \`${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**包含依赖:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 压缩库: jemalloc 5.3.0, zstd 1.5.6, lz4 1.10.0, snappy 1.1.10" >> $GITHUB_STEP_SUMMARY
+          echo "- OmniStream: xxHash 0.8.2, rocksdb 8.11.4" >> $GITHUB_STEP_SUMMARY
+          echo "- Gluten: abseil-cpp 20250127.0, re2 2024-07-02" >> $GITHUB_STEP_SUMMARY
+          echo "- 预装: libboundscheck 1.1.16, Arrow 15.0.0 Maven JAR" >> $GITHUB_STEP_SUMMARY
 
   # ==================== 构建摘要 ====================
   summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [stage-1, stage-2]
-    if: always() && needs.stage-1.result != 'skipped'
+    needs: [prepare, toolchain, deps]
+    if: always()
 
     steps:
-      - name: Set image name (lowercase)
-        id: image_info
-        run: |
-          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "image_name=${OWNER_LOWER}/openeuler-build" >> $GITHUB_OUTPUT
-
       - name: Generate build summary
         run: |
-          IMAGE_NAME="${{ steps.image_info.outputs.image_name }}"
+          IMAGE_NAME="${{ needs.prepare.outputs.image_name }}"
+          TOOLCHAIN_TAG="${{ needs.prepare.outputs.toolchain_tag }}"
+          DEPS_TAG="${{ needs.prepare.outputs.deps_tag }}"
 
-          echo "## Docker 镜像构建结果" >> $GITHUB_STEP_SUMMARY
+          echo "## 🐳 Docker 镜像构建结果" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Tag | 状态 | 镜像地址 |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-----|------|----------|" >> $GITHUB_STEP_SUMMARY
 
-          # Stage 1
-          if [ "${{ needs.stage-1.result }}" = "success" ]; then
-            echo "| Stage 1 (基础镜像) | 26330_01 | ✅ 成功 | \`${{ env.REGISTRY }}/${IMAGE_NAME}:26330_01\` |" >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ needs.stage-1.result }}" = "skipped" ]; then
-            echo "| Stage 1 (基础镜像) | 26330_01 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
+          # Toolchain
+          if [ "${{ needs.toolchain.result }}" = "success" ]; then
+            echo "| 🔧 Toolchain | \`${TOOLCHAIN_TAG}\` | ✅ 成功 | \`${{ env.REGISTRY }}/${IMAGE_NAME}:${TOOLCHAIN_TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.toolchain.result }}" = "skipped" ]; then
+            echo "| 🔧 Toolchain | - | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| Stage 1 (基础镜像) | 26330_01 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔧 Toolchain | - | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
           fi
 
-          # Stage 2
-          if [ "${{ needs.stage-2.result }}" = "success" ]; then
-            echo "| Stage 2 (应用镜像) | 26330_02 | ✅ 成功 | \`${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02\` |" >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ needs.stage-2.result }}" = "skipped" ]; then
-            echo "| Stage 2 (应用镜像) | 26330_02 | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
+          # Dependencies
+          if [ "${{ needs.deps.result }}" = "success" ]; then
+            echo "| 📦 Dependencies | \`${DEPS_TAG}\` | ✅ 成功 | \`${{ env.REGISTRY }}/${IMAGE_NAME}:${DEPS_TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deps.result }}" = "skipped" ]; then
+            echo "| 📦 Dependencies | - | ⏭️ 跳过 | - |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| Stage 2 (应用镜像) | 26330_02 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| 📦 Dependencies | - | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 构建流程图" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 使用方式" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# 拉取最新镜像（包含所有依赖）" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${IMAGE_NAME}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# 拉取特定版本工具链" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${IMAGE_NAME}:${TOOLCHAIN_TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# 拉取特定版本依赖镜像" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${IMAGE_NAME}:${DEPS_TAG}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "SWR (openEuler 22.03 SP3 基础镜像)" >> $GITHUB_STEP_SUMMARY
-          echo "        │" >> $GITHUB_STEP_SUMMARY
-          echo "        ▼" >> $GITHUB_STEP_SUMMARY
-          echo "┌─────────────────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
-          echo "│ Stage 1: 构建基础镜像 (26330_01)            │" >> $GITHUB_STEP_SUMMARY
-          echo "│ ─────────────────────────────────────────── │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • 编译工具链: JDK8/17/21, Maven, CMake      │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • LLVM-15, Protobuf, Lcov                   │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • 基础库: fmt, folly                        │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • Python 包, 所有系统依赖                   │" >> $GITHUB_STEP_SUMMARY
-          echo "└─────────────────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
-          echo "        │" >> $GITHUB_STEP_SUMMARY
-          echo "        ▼" >> $GITHUB_STEP_SUMMARY
-          echo "┌─────────────────────────────────────────────┐" >> $GITHUB_STEP_SUMMARY
-          echo "│ Stage 2: 应用镜像 (26330_02)                │" >> $GITHUB_STEP_SUMMARY
-          echo "│ ─────────────────────────────────────────── │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • 应用依赖: Arrow, ORC, Hadoop              │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • 压缩库: jemalloc, zstd, lz4, snappy       │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • Gluten依赖: abseil-cpp, re2               │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • OmniStream: xxHash, rocksdb               │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • Jenkins Agent 配置                        │" >> $GITHUB_STEP_SUMMARY
-          echo "│ • 依赖产物收集                              │" >> $GITHUB_STEP_SUMMARY
-          echo "└─────────────────────────────────────────────┘" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 使用方式" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# 拉取最终镜像" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${IMAGE_NAME}:26330_02" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
