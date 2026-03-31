@@ -213,7 +213,8 @@ RUN set -ex && \
     && cd libboundscheck && git checkout -q tags/${LIBBOUNDSCHECK_VERSION} \
     && make CC=gcc \
     && cp lib/*.so /usr/local/lib/ \
-    && cp -r include /usr/local/libboundscheck-include \
+    && mkdir -p /usr/local/libboundscheck/include \
+    && cp -r include/* /usr/local/libboundscheck/include \
     && cd /tmp && rm -rf libboundscheck
 
 # ==================== 第十层：预装 Maven 依赖 (Native Reader + Arrow 合并) ====================
@@ -286,8 +287,8 @@ RUN set -ex && \
 # ==================== 环境变量 ====================
 ENV AGENT_WORKDIR=${AGENT_WORKDIR}
 ENV LIBBOUNDSCHECK_HOME=/usr/local
-ENV C_INCLUDE_PATH=/usr/local/libboundscheck-include:${C_INCLUDE_PATH}
-ENV CPLUS_INCLUDE_PATH=/usr/local/libboundscheck-include:${CPLUS_INCLUDE_PATH}
+ENV C_INCLUDE_PATH=/usr/local:${C_INCLUDE_PATH}
+ENV CPLUS_INCLUDE_PATH=/usr/local:${CPLUS_INCLUDE_PATH}
 
 # ==================== 切换用户 ====================
 USER ${user}
