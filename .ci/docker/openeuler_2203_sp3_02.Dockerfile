@@ -219,12 +219,15 @@ RUN set -ex && \
 
 # ==================== 第十层：预装 Maven 依赖 (Native Reader + Arrow 合并) ====================
 RUN set -ex && \
-    # Native Reader JAR
-    mkdir -p /root/.m2/repository/com/huawei/boostkit/boostkit-omniop-native-reader/3.4.3-${OMNI_OPERATOR_VERSION} \
-    && wget -q -O /tmp/native-reader.jar \
+    # Native Reader JAR - 使用 mvn install:install-file 安装
+    wget -q -O /tmp/native-reader.jar \
         "${OBS_BASE_URL}/omniop_native_reader/br_feature_omnioperator_spark_2026_330/Daily.26.0.0.B001/boostkit-omniop-native-reader-3.4.3-${OMNI_OPERATOR_VERSION}.jar" \
-    && cp /tmp/native-reader.jar \
-        /root/.m2/repository/com/huawei/boostkit/boostkit-omniop-native-reader/3.4.3-${OMNI_OPERATOR_VERSION}/ \
+    && mvn install:install-file \
+        -DgroupId=com.huawei.boostkit \
+        -DartifactId=boostkit-omniop-native-reader \
+        -Dversion=3.4.3-${OMNI_OPERATOR_VERSION} \
+        -Dpackaging=jar \
+        -Dfile=/tmp/native-reader.jar \
     # Arrow Maven JAR
     && mkdir -p /root/.m2/repository/org/apache \
     && cd /root/.m2/repository/org/apache \
