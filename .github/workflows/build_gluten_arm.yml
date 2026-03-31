@@ -42,14 +42,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Cache Maven dependencies
-      uses: actions/cache@v4
-      with:
-        path: maven-docker-cache
-        key: ${{ runner.os }}-arm-maven-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-arm-maven-
-
     - name: Cache Docker image
       uses: actions/cache@v4
       with:
@@ -85,16 +77,15 @@ jobs:
       run: |
         echo "创建本地目录..."
         mkdir -p build-output
-        mkdir -p maven-docker-cache
 
     - name: Start build container
       run: |
         echo "启动构建容器 gluten-project-builder..."
+        # 注意：不挂载 Maven 缓存，使用镜像中预装的依赖
         docker run -d \
             --name gluten-project-builder \
             --user root \
             --entrypoint /bin/sh \
-            -v "${{ github.workspace }}/maven-docker-cache:/root/.m2" \
             --workdir "/opt" \
             ghcr.io/computing-ttfhw/gluten-build:deps-latest \
             -c "tail -f /dev/null"
