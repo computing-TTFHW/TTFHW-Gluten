@@ -119,6 +119,10 @@ setup_compile_env() {
     export LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:${OMNI_HOME}/lib:$LIBRARY_PATH
     export C_INCLUDE_PATH=${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
     export CPLUS_INCLUDE_PATH=${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
+    # CMake 查找 Protobuf 需要
+    export CMAKE_PREFIX_PATH=${PROTOBUF_HOME}
+    export Protobuf_ROOT=${PROTOBUF_HOME}
+    export Protobuf_PROTOC_EXECUTABLE=${PROTOBUF_HOME}/bin/protoc
 }
 
 # -------------------- 编译 Gluten --------------------
