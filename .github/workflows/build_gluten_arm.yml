@@ -18,6 +18,9 @@ jobs:
       contents: read
       packages: read
 
+    env:
+      DOCKER_IMAGE: ghcr.io/computing-ttfhw/gluten-build:deps-latest
+
     steps:
     - name: Checkout current repo
       uses: actions/checkout@v4
@@ -53,7 +56,7 @@ jobs:
 
     - name: Load or pull Docker image
       run: |
-        IMAGE="ghcr.io/computing-ttfhw/gluten-build:deps-latest"
+        IMAGE="${{ env.DOCKER_IMAGE }}"
         CACHE_FILE="${{ github.workspace }}/docker-image-cache/gluten-build.tar"
 
         echo "尝试拉取最新镜像：$IMAGE"
@@ -87,7 +90,7 @@ jobs:
             --user root \
             --entrypoint /bin/sh \
             --workdir "/opt" \
-            ghcr.io/computing-ttfhw/gluten-build:deps-latest \
+            ${{ env.DOCKER_IMAGE }} \
             -c "tail -f /dev/null"
 
         if docker ps --filter "name=^/gluten-project-builder$" --format "{{.Names}}" | grep -q "^gluten-project-builder$"; then

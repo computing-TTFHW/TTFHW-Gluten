@@ -32,12 +32,8 @@ init_environment() {
     rm -rf ${agentpath}
     mkdir -p ${agentpath}/software ${agentpath}/inner
 
-    # 环境变量已在镜像中固化，无需重复设置
-    # 仅添加运行时动态路径（OMNI_HOME）
-    export LD_LIBRARY_PATH=${OMNI_HOME}/lib:$LD_LIBRARY_PATH
-    export LIBRARY_PATH=${OMNI_HOME}/lib:$LIBRARY_PATH
-    export C_INCLUDE_PATH=${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
-    export CPLUS_INCLUDE_PATH=${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
+    # 环境变量已在镜像中固化
+    # 运行时路径（OMNI_HOME）在 setup_compile_env 中统一设置
 
     echo "=== 构建环境初始化完成 ==="
 }
@@ -79,7 +75,10 @@ deploy_omni_operator() {
     fi
 
     local zip_name=BoostKit-omniruntime-omnioperator-${OMNI_OPERATOR_VERSION}.zip
-    wget "${OBS_BASE_URL}/${package_path}/${zip_name}"
+    if ! wget "${OBS_BASE_URL}/${package_path}/${zip_name}"; then
+        echo "错误: 下载 OmniOperator 运行时失败，路径: ${OBS_BASE_URL}/${package_path}/${zip_name}"
+        exit 1
+    fi
     unzip -o ${zip_name}
 
     local tar_name=boostkit-omniop-operator-${OMNI_OPERATOR_VERSION}-aarch64-${OS_TYPE}.tar.gz
@@ -114,11 +113,12 @@ deploy_omni_operator() {
 
 # -------------------- 设置编译环境 --------------------
 setup_compile_env() {
-    # 环境变量已在镜像中固化，仅添加 OMNI_HOME 相关路径
-    export LD_LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:${OMNI_HOME}/lib:$LD_LIBRARY_PATH
-    export LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:${OMNI_HOME}/lib:$LIBRARY_PATH
-    export C_INCLUDE_PATH=${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
-    export CPLUS_INCLUDE_PATH=${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
+    # 合并镜像固化的环境变量与运行时动态路径
+    # 包含: Protobuf, LLVM, Gluten, libboundscheck, OMNI_HOME
+    export LD_LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:/usr/local/lib:${OMNI_HOME}/lib:$LD_LIBRARY_PATH
+    export LIBRARY_PATH=${PROTOBUF_HOME}/lib:/opt/Gluten/lib:/opt/Gluten/lib64:/usr/local/lib:${OMNI_HOME}/lib:$LIBRARY_PATH
+    export C_INCLUDE_PATH=/usr/local:${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$C_INCLUDE_PATH
+    export CPLUS_INCLUDE_PATH=/usr/local:${LLVM_HOME}/include:${PROTOBUF_HOME}/include:/opt/Gluten/include:${OMNI_HOME}/lib/include:$CPLUS_INCLUDE_PATH
     # CMake 查找 Protobuf 需要
     export CMAKE_PREFIX_PATH=${PROTOBUF_HOME}
     export Protobuf_ROOT=${PROTOBUF_HOME}

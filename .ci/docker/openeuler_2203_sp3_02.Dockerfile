@@ -288,10 +288,13 @@ RUN set -ex && \
     && rm -rf /tmp/*
 
 # ==================== 环境变量 ====================
+# 注意：Dockerfile 中 ENV 不能引用之前 ENV 的值，需要完整设置
 ENV AGENT_WORKDIR=${AGENT_WORKDIR}
 ENV LIBBOUNDSCHECK_HOME=/usr/local
-ENV C_INCLUDE_PATH=/usr/local:${C_INCLUDE_PATH}
-ENV CPLUS_INCLUDE_PATH=/usr/local:${CPLUS_INCLUDE_PATH}
+ENV LD_LIBRARY_PATH=/opt/buildtools/Protobuf-3.21.9/lib:/opt/Gluten/lib:/opt/Gluten/lib64:/usr/local/lib
+ENV LIBRARY_PATH=/opt/buildtools/Protobuf-3.21.9/lib:/opt/Gluten/lib:/opt/Gluten/lib64:/usr/local/lib
+ENV C_INCLUDE_PATH=/usr/local:/opt/buildtools/LLVM-15.0.4/include:/opt/buildtools/Protobuf-3.21.9/include:/opt/Gluten/include
+ENV CPLUS_INCLUDE_PATH=/usr/local:/opt/buildtools/LLVM-15.0.4/include:/opt/buildtools/Protobuf-3.21.9/include:/opt/Gluten/include
 
 # ==================== 切换用户 ====================
 USER ${user}
